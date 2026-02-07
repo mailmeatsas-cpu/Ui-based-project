@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Application Onboarding Portal{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <script src="https://unpkg.com/vis-network@9.1.6/standalone/umd/vis-network.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+                    colors: {
+                        brand: { 50: '#eff6ff', 100: '#dbeafe', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8', 900: '#1e3a5f' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', system-ui, sans-serif; }
+        .sidebar-link {
+            display: flex; align-items: center; gap: 0.75rem; padding: 0.625rem 1rem;
+            border-radius: 0.5rem; color: #94a3b8; font-size: 0.875rem; font-weight: 500;
+            transition: all 0.15s ease;
+        }
+        .sidebar-link:hover { background: rgba(255,255,255,0.08); color: #e2e8f0; }
+        .sidebar-link.active { background: rgba(59,130,246,0.15); color: #60a5fa; }
+        .sidebar-project {
+            display: block; padding: 0.375rem 1rem; border-radius: 0.375rem;
+            color: #64748b; font-size: 0.8125rem; transition: all 0.15s ease;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .sidebar-project:hover { background: rgba(255,255,255,0.06); color: #94a3b8; }
+        .sidebar-project.active { color: #60a5fa; }
+        .card { background: white; border-radius: 0.75rem; border: 1px solid #e2e8f0; padding: 1.5rem; }
+        .card-hover { transition: all 0.2s ease; }
+        .card-hover:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); transform: translateY(-1px); }
+        .badge { display: inline-flex; align-items: center; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+        .badge-green { background: #dcfce7; color: #166534; }
+        .badge-amber { background: #fef3c7; color: #92400e; }
+        .badge-red { background: #fee2e2; color: #991b1b; }
+        .badge-blue { background: #dbeafe; color: #1e40af; }
+        .badge-gray { background: #f1f5f9; color: #475569; }
+        .progress-bar { height: 6px; border-radius: 3px; background: #e2e8f0; overflow: hidden; }
+        .progress-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+        .tooltip { position: relative; }
+        .tooltip::after {
+            content: attr(data-tip); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+            background: #1e293b; color: white; padding: 0.25rem 0.5rem; border-radius: 0.25rem;
+            font-size: 0.75rem; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.15s;
+        }
+        .tooltip:hover::after { opacity: 1; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-in { animation: fadeIn 0.3s ease forwards; }
+        .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 50; display: none; }
+        .modal-backdrop.show { display: flex; align-items: center; justify-content: center; }
+    </style>
+    {% block head %}{% endblock %}
+</head>
+<body class="bg-slate-50 min-h-screen">
+    <!-- Sidebar -->
+    <aside class="fixed left-0 top-0 h-full w-60 bg-slate-900 text-white z-40 flex flex-col shadow-xl">
+        <div class="p-5 border-b border-slate-800">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center">
+                    <i class="fas fa-rocket text-sm"></i>
+                </div>
+                <div>
+                    <h1 class="text-base font-bold leading-tight">Application Portal</h1>
+                    <p class="text-slate-500 text-xs">Infrastructure Onboarding</p>
+                </div>
+            </div>
+        </div>
+
+        <nav class="px-3 py-4 space-y-1">
+            <a href="/" class="sidebar-link {% if page == 'dashboard' %}active{% endif %}">
+                <i class="fas fa-th-large w-5 text-center"></i> Dashboard
+            </a>
+            <a href="/tasks" class="sidebar-link {% if page == 'tasks' %}active{% endif %}">
+                <i class="fas fa-list-check w-5 text-center"></i> All Tasks
+            </a>
+            <a href="/templates" class="sidebar-link {% if page == 'templates' %}active{% endif %}">
+                <i class="fas fa-layer-group w-5 text-center"></i> Templates
+            </a>
+            <a href="/projects/new" class="sidebar-link {% if page == 'new_project' %}active{% endif %}">
+                <i class="fas fa-plus-circle w-5 text-center"></i> New Project
+            </a>
+        </nav>
+
+        <div class="px-3 mt-2 flex-1 overflow-y-auto">
+            <!-- Program Header -->
+            <p class="text-slate-600 text-[0.6875rem] uppercase font-semibold tracking-wider px-3 mb-2">
+                <i class="fas fa-layer-group text-xs mr-1 opacity-60"></i>Application on EKS
+            </p>
+
+            <!-- Domains with nested projects (from database) -->
+            {% if sidebar_domains %}
+            {% for domain in sidebar_domains %}
+            {% set domain_projects = sidebar_projects|selectattr('domain', 'eq', domain.code)|list %}
+            {% if domain_projects %}
+            <div class="mb-2">
+                <a href="/domain/{{ domain.code }}"
+                   class="flex items-center justify-between px-3 py-1.5 text-xs font-medium text-slate-400 hover:text-slate-300 hover:bg-slate-800/50 rounded-md cursor-pointer
+                          {% if page == 'domain' and active_domain == domain.code %}bg-blue-900/30 text-blue-400{% endif %}">
+                    <span><i class="fas fa-folder text-xs mr-1.5 opacity-50"></i>{{ domain.code }}</span>
+                    <span class="text-[0.625rem] bg-slate-700/50 px-1.5 rounded">{{ domain_projects|length }}</span>
+                </a>
+                <div class="ml-4 mt-0.5 space-y-0.5">
+                    {% for p in domain_projects %}
+                    <a href="/project/{{ p.id }}"
+                       class="sidebar-project {% if page == 'project' and request.path_params.get('project_id')|string == p.id|string %}active{% endif %}">
+                        <span class="text-slate-500 text-[0.625rem] w-8">{{ p.environment }}</span>
+                        <span class="truncate">{{ p.project_name|replace('Application-' ~ p.domain|lower ~ '-', '') }}</span>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% else %}
+            <a href="/domain/{{ domain.code }}"
+               class="flex items-center justify-between px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-400 rounded-md mb-1
+                      {% if page == 'domain' and active_domain == domain.code %}bg-blue-900/30 text-blue-400{% endif %}">
+                <span><i class="fas fa-folder text-xs mr-1.5 opacity-50"></i>{{ domain.code }}</span>
+                <span class="text-[0.625rem] text-slate-600">0</span>
+            </a>
+            {% endif %}
+            {% endfor %}
+            {% else %}
+            <div class="px-3 py-4 text-center">
+                <p class="text-slate-500 text-xs mb-2">No domains yet</p>
+                <a href="/" class="text-blue-400 text-xs hover:underline">Go to Dashboard to add</a>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="p-4 border-t border-slate-800 text-xs text-slate-600">
+            v3.0 &middot; FastAPI + Tailwind
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="ml-60 min-h-screen">
+        {% block content %}{% endblock %}
+    </main>
+
+    <script src="/static/app.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

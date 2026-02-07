@@ -1,0 +1,566 @@
+{% extends "base.html" %}
+{% block title %}{% if template %}{{ template.template_name }}{% else %}New Template{% endif %} — Template Editor{% endblock %}
+
+{% block head %}
+<style>
+    #dag-container { width: 100%; height: 300px; border-radius: 0.75rem; background: #0f172a; }
+    .task-row:hover { background: #f8fafc; }
+    .tab-btn { padding: 0.5rem 1rem; font-size: 0.875rem; font-weight: 500; border-bottom: 2px solid transparent;
+               color: #64748b; cursor: pointer; transition: all 0.15s; }
+    .tab-btn.active { color: #2563eb; border-bottom-color: #2563eb; }
+    .tab-btn:hover { color: #334155; }
+    .auto-badge { font-size: 0.65rem; padding: 0.1rem 0.4rem; border-radius: 0.25rem; font-weight: 600; text-transform: uppercase; }
+    .auto-manual { background: #f1f5f9; color: #64748b; }
+    .auto-semi { background: #fef3c7; color: #92400e; }
+    .auto-full { background: #dbeafe; color: #1e40af; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="p-8">
+    <!-- Breadcrumb -->
+    <div class="flex items-center gap-2 text-sm text-slate-500 mb-4">
+        <a href="/" class="hover:text-blue-600"><i class="fas fa-home"></i></a>
+        <i class="fas fa-chevron-right text-xs"></i>
+        <a href="/templates" class="hover:text-blue-600">Templates</a>
+        <i class="fas fa-chevron-right text-xs"></i>
+        <span>{% if template %}{{ template.template_name }}{% else %}New Template{% endif %}</span>
+    </div>
+
+    {% if is_new %}
+    <!-- New template: redirect after creation -->
+    <div class="card text-center py-16 max-w-lg mx-auto">
+        <i class="fas fa-layer-group text-4xl text-blue-300 mb-4"></i>
+        <h2 class="text-lg font-semibold text-slate-900 mb-2">Create a new template first</h2>
+        <p class="text-sm text-slate-500 mb-4">Give your template a name, then you can add phases and tasks.</p>
+        <form onsubmit="createAndRedirect(event)" class="space-y-3 text-left max-w-sm mx-auto">
+            <input type="text" name="template_name" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="Template name">
+            <textarea name="description" rows="2" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="Description (optional)"></textarea>
+            <button type="submit" class="w-full px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">Create Template</button>
+        </form>
+    </div>
+    {% else %}
+    <!-- Template Header (editable) -->
+    <div class="card mb-6">
+        <form id="metaForm" onsubmit="saveMetadata(event)" class="flex items-start gap-6">
+            <div class="flex-1 space-y-3">
+                <div class="flex items-center gap-3">
+                    <input type="text" name="template_name" value="{{ template.template_name }}" required
+                           class="text-xl font-bold text-slate-900 border-0 border-b-2 border-transparent focus:border-blue-500 focus:ring-0 px-0 py-1 w-full">
+                    <span class="badge badge-gray flex-shrink-0">v{{ template.version }}</span>
+                    {% if template.is_default %}<span class="badge badge-green flex-shrink-0">Default</span>{% endif %}
+                </div>
+                <div class="flex gap-4">
+                    <input type="text" name="description" value="{{ template.description or '' }}" placeholder="Description"
+                           class="flex-1 text-sm text-slate-500 border-0 border-b border-transparent focus:border-blue-500 focus:ring-0 px-0 py-0.5">
+                    <input type="text" name="version" value="{{ template.version }}" placeholder="Version" style="width: 80px;"
+                           class="text-sm text-slate-500 border-0 border-b border-transparent focus:border-blue-500 focus:ring-0 px-0 py-0.5">
+                </div>
+            </div>
+            <button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex-shrink-0">
+                <i class="fas fa-save mr-1"></i> Save
+            </button>
+        </form>
+    </div>
+
+    <!-- DAG Preview -->
+    <div class="card mb-6">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-semibold text-slate-900"><i class="fas fa-project-diagram text-blue-600 mr-2"></i>Dependency Graph Preview</h2>
+        </div>
+        <div id="dag-container"></div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="border-b border-slate-200 mb-6 flex gap-1">
+        <button class="tab-btn active" onclick="switchTab('phases', this)">Phases & Tasks</button>
+        <button class="tab-btn" onclick="switchTab('deps', this)">Dependencies</button>
+        <button class="tab-btn" onclick="switchTab('export', this)">Export</button>
+    </div>
+
+    <!-- Phases Tab -->
+    <div id="tab-phases">
+        {% for tp in template_phases %}
+        <div class="card mb-4 animate-in" style="animation-delay: {{ loop.index * 0.03 }}s">
+            <div class="flex items-center justify-between cursor-pointer" onclick="document.getElementById('detail-tp-{{ tp.id }}').classList.toggle('hidden')">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm">{{ tp.phase_number }}</div>
+                    <div>
+                        <h3 class="font-semibold text-slate-900 text-sm">{{ tp.phase_name }}</h3>
+                        <span class="text-xs text-slate-500">{{ tp.task_count }} tasks &middot; {{ tp.duration_days }}d</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="event.stopPropagation(); editPhase({{ tp.id }}, {{ tp.phase_number }}, '{{ tp.phase_name }}', {{ tp.duration_days }})" class="p-1.5 text-slate-400 hover:text-blue-600 rounded"><i class="fas fa-pencil text-xs"></i></button>
+                    <button onclick="event.stopPropagation(); deletePhase({{ tp.id }})" class="p-1.5 text-slate-400 hover:text-red-600 rounded"><i class="fas fa-trash text-xs"></i></button>
+                    <i class="fas fa-chevron-down text-slate-400 text-xs"></i>
+                </div>
+            </div>
+            <div id="detail-tp-{{ tp.id }}" class="hidden mt-3 border-t border-slate-100 pt-3">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-xs text-slate-500 uppercase tracking-wider">
+                            <th class="text-left py-1.5 font-medium w-8">#</th>
+                            <th class="text-left py-1.5 font-medium">Task</th>
+                            <th class="text-left py-1.5 font-medium">Owner</th>
+                            <th class="text-left py-1.5 font-medium">Jira</th>
+                            <th class="text-left py-1.5 font-medium">Reference</th>
+                            <th class="text-left py-1.5 font-medium">Auto</th>
+                            <th class="text-right py-1.5 font-medium w-20"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for tt in tasks_by_phase.get(tp.id, []) %}
+                        <tr class="task-row border-t border-slate-50">
+                            <td class="py-2 text-slate-400">{{ tt.task_order }}</td>
+                            <td class="py-2">
+                                <span class="text-slate-900 font-medium">{{ tt.task_name }}</span>
+                                {% if tt.category %}<span class="badge badge-gray ml-2">{{ tt.category }}</span>{% endif %}
+                                {% if tt.notes %}<i class="fas fa-comment text-slate-300 text-xs ml-1 tooltip" data-tip="{{ tt.notes }}"></i>{% endif %}
+                            </td>
+                            <td class="py-2 text-slate-600 text-xs">{{ tt.ownership }}</td>
+                            <td class="py-2 text-slate-500 text-xs">{% if tt.jira_reference %}<a href="#" class="text-blue-600 hover:underline">{{ tt.jira_reference }}</a>{% else %}-{% endif %}</td>
+                            <td class="py-2 text-slate-500 text-xs">{% if tt.sample_reference %}<a href="{{ tt.sample_reference }}" target="_blank" class="text-blue-600 hover:underline">Link</a>{% else %}-{% endif %}</td>
+                            <td class="py-2">
+                                {% if tt.automation_type == 'auto' %}<span class="auto-badge auto-full">Auto</span>
+                                {% elif tt.automation_type == 'semi_auto' %}<span class="auto-badge auto-semi">Semi</span>
+                                {% else %}<span class="auto-badge auto-manual">Manual</span>{% endif %}
+                            </td>
+                            <td class="py-2 text-right">
+                                <button onclick='editTask({{ tt|tojson|safe }})' class="p-1 text-slate-400 hover:text-blue-600"><i class="fas fa-pencil text-xs"></i></button>
+                                <button onclick="deleteTask({{ tt.id }})" class="p-1 text-slate-400 hover:text-red-600"><i class="fas fa-trash text-xs"></i></button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        <!-- Add Task Row -->
+                        <tr class="task-row border-t border-slate-50 hover:bg-blue-50/50 cursor-pointer" onclick="addTask({{ tp.id }})">
+                            <td class="py-2 text-slate-300"><i class="fas fa-plus text-xs"></i></td>
+                            <td class="py-2 text-slate-400 text-xs italic" colspan="5">Add new task...</td>
+                            <td class="py-2 text-right">
+                                <button class="p-1 text-slate-300 hover:text-blue-600"><i class="fas fa-plus text-xs"></i></button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endfor %}
+
+        <button onclick="showModal('addPhaseModal')" class="mt-3 px-3 py-2 text-xs text-slate-400 hover:text-blue-600 border border-dashed border-slate-300 hover:border-blue-400 rounded-lg flex items-center gap-1.5 transition-colors" title="Add phase">
+            <i class="fas fa-plus"></i> <span>Add Phase</span>
+        </button>
+    </div>
+
+    <!-- Dependencies Tab -->
+    <div id="tab-deps" class="hidden">
+        <div class="card mb-4">
+            <h3 class="text-sm font-semibold text-slate-900 mb-3">Add Dependency</h3>
+            <div class="flex items-end gap-3">
+                <div>
+                    <label class="text-xs font-medium text-slate-500 block mb-1">Phase</label>
+                    <select id="depPhase" class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm">
+                        {% for tp in template_phases %}
+                        <option value="{{ tp.phase_number }}">P{{ tp.phase_number }}: {{ tp.phase_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="text-sm text-slate-500 pb-2">depends on</div>
+                <div>
+                    <label class="text-xs font-medium text-slate-500 block mb-1">Prerequisite</label>
+                    <select id="depPrereq" class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm">
+                        {% for tp in template_phases %}
+                        <option value="{{ tp.phase_number }}">P{{ tp.phase_number }}: {{ tp.phase_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button onclick="addDependency()" class="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">Add</button>
+            </div>
+        </div>
+        <div class="card">
+            <h3 class="text-sm font-semibold text-slate-900 mb-3">Current Dependencies</h3>
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-xs text-slate-500 uppercase">
+                        <th class="text-left py-2 font-medium">Phase</th>
+                        <th class="text-left py-2 font-medium">Depends On</th>
+                        <th class="text-right py-2 font-medium"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for d in deps %}
+                    <tr class="border-t border-slate-100">
+                        <td class="py-2">Phase {{ d.phase_number }}</td>
+                        <td class="py-2">Phase {{ d.depends_on_phase_number }}</td>
+                        <td class="py-2 text-right">
+                            <button onclick="removeDep({{ d.id }})" class="text-red-500 hover:text-red-700 text-xs font-medium">Remove</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not deps %}
+                    <tr><td colspan="3" class="py-6 text-center text-slate-400">No dependencies defined</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Export Tab -->
+    <div id="tab-export" class="hidden">
+        <div class="card">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-semibold text-slate-900">JSON Export</h3>
+                <div class="flex gap-2">
+                    <button onclick="copyExport()" class="px-3 py-1.5 text-xs font-medium bg-slate-100 text-slate-700 rounded-md hover:bg-slate-200"><i class="fas fa-copy mr-1"></i>Copy</button>
+                    <a href="/api/template/{{ template.id }}/export" class="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 rounded-md hover:bg-green-100"><i class="fas fa-download mr-1"></i>Download</a>
+                </div>
+            </div>
+            <textarea id="exportJson" rows="20" readonly class="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono bg-slate-50 text-slate-700">Loading...</textarea>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Add Phase Modal -->
+<div class="modal-backdrop" id="addPhaseModal">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-slate-900">Add Phase</h3>
+            <button onclick="hideModal('addPhaseModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+        </div>
+        <form id="addPhaseForm" onsubmit="submitPhase(event)" class="space-y-3">
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Phase Number</label>
+                    <input type="number" name="phase_number" min="1" value="{{ (template_phases|length) + 1 if template_phases else 1 }}" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Duration (days)</label>
+                    <input type="number" name="duration_days" value="14" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Phase Name</label>
+                <input type="text" name="phase_name" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., Post-Go-Live Support">
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="hideModal('addPhaseModal')" class="px-4 py-2 text-sm text-slate-600">Cancel</button>
+                <button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">Add Phase</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Phase Modal -->
+<div class="modal-backdrop" id="editPhaseModal">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-slate-900">Edit Phase</h3>
+            <button onclick="hideModal('editPhaseModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+        </div>
+        <form id="editPhaseForm" onsubmit="submitEditPhase(event)" class="space-y-3">
+            <input type="hidden" name="phase_id" id="editPhaseId">
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Phase Number</label>
+                    <input type="number" name="phase_number" id="editPhaseNum" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Duration (days)</label>
+                    <input type="number" name="duration_days" id="editPhaseDur" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Phase Name</label>
+                <input type="text" name="phase_name" id="editPhaseName" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="hideModal('editPhaseModal')" class="px-4 py-2 text-sm text-slate-600">Cancel</button>
+                <button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Add/Edit Task Modal -->
+<div class="modal-backdrop" id="taskModal">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-slate-900" id="taskModalTitle">Add Task</h3>
+            <button onclick="hideModal('taskModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+        </div>
+        <form id="taskForm" onsubmit="submitTask(event)" class="space-y-3">
+            <input type="hidden" name="task_id" id="taskId">
+            <input type="hidden" name="phase_id" id="taskPhaseId">
+            <input type="hidden" name="mode" id="taskMode" value="add">
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Task Name</label>
+                <input type="text" name="task_name" id="taskName" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Category</label>
+                    <input type="text" name="category" id="taskCat" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., AWS">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Ownership</label>
+                    <select name="ownership" id="taskOwner" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                        <option value="Platform Team">Platform Team</option>
+                        <option value="App Team">App Team</option>
+                    </select>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Jira Reference</label>
+                    <input type="text" name="jira_reference" id="taskJira" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., Application-1234">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Sample Reference</label>
+                    <input type="text" name="sample_reference" id="taskSampleRef" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="Link or doc reference">
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Notes</label>
+                <textarea name="notes" id="taskNotes" rows="2" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="Additional notes, ticket references, comments..."></textarea>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Automation Type</label>
+                <div class="flex gap-4">
+                    <label class="flex items-center gap-2 text-sm cursor-pointer">
+                        <input type="radio" name="automation_type" value="manual" checked class="text-blue-600" onchange="toggleAutoConfig()"> Manual
+                    </label>
+                    <label class="flex items-center gap-2 text-sm cursor-pointer">
+                        <input type="radio" name="automation_type" value="semi_auto" class="text-blue-600" onchange="toggleAutoConfig()"> Semi-Auto
+                    </label>
+                    <label class="flex items-center gap-2 text-sm cursor-pointer">
+                        <input type="radio" name="automation_type" value="auto" class="text-blue-600" onchange="toggleAutoConfig()"> Fully Auto
+                    </label>
+                </div>
+            </div>
+            <div id="autoConfigSection" class="hidden">
+                <label class="block text-sm font-medium text-slate-700 mb-1">Automation Config (JSON)</label>
+                <textarea name="automation_config" id="taskAutoConfig" rows="3" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono" placeholder='{"action_url": "", "api_endpoint": "", "params": {}}'></textarea>
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="hideModal('taskModal')" class="px-4 py-2 text-sm text-slate-600">Cancel</button>
+                <button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium" id="taskSubmitBtn">Add Task</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+{% if not is_new %}
+const TEMPLATE_ID = {{ template.id }};
+
+// ── Tabs ──
+function switchTab(tab, btn) {
+    document.querySelectorAll('[id^="tab-"]').forEach(el => el.classList.add('hidden'));
+    document.getElementById('tab-' + tab).classList.remove('hidden');
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    if (tab === 'export') loadExport();
+}
+
+// ── DAG ──
+async function initDAG() {
+    const resp = await fetch('/api/template/' + TEMPLATE_ID + '/dag');
+    const data = await resp.json();
+    const container = document.getElementById('dag-container');
+    new vis.Network(container, {nodes: new vis.DataSet(data.nodes), edges: new vis.DataSet(data.edges)}, {
+        layout: {
+            hierarchical: {
+                enabled: true,
+                direction: 'LR',
+                sortMethod: 'hubsize',
+                shakeTowards: 'roots',
+                nodeSpacing: 80,
+                levelSeparation: 200,
+                treeSpacing: 100,
+                blockShifting: true,
+                edgeMinimization: true
+            }
+        },
+        physics: false,
+        interaction: { hover: true, zoomView: true, dragView: true },
+        nodes: { borderWidth: 2 },
+        edges: { smooth: { type: 'cubicBezier', forceDirection: 'horizontal' } }
+    });
+}
+
+// ── Metadata ──
+async function saveMetadata(e) {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = Object.fromEntries(fd.entries());
+    const resp = await fetch('/api/template/' + TEMPLATE_ID, {
+        method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    });
+    if ((await resp.json()).ok) showToast('Template saved', 'success');
+}
+
+// ── Phases ──
+async function submitPhase(e) {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = Object.fromEntries(fd.entries());
+    body.phase_number = parseInt(body.phase_number);
+    body.duration_days = parseInt(body.duration_days);
+    await fetch('/api/template/' + TEMPLATE_ID + '/phase', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    });
+    location.reload();
+}
+
+function editPhase(id, num, name, dur) {
+    document.getElementById('editPhaseId').value = id;
+    document.getElementById('editPhaseNum').value = num;
+    document.getElementById('editPhaseName').value = name;
+    document.getElementById('editPhaseDur').value = dur;
+    showModal('editPhaseModal');
+}
+
+async function submitEditPhase(e) {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const id = fd.get('phase_id');
+    const body = { phase_name: fd.get('phase_name'), phase_number: parseInt(fd.get('phase_number')), duration_days: parseInt(fd.get('duration_days')) };
+    await fetch('/api/template/phase/' + id, {
+        method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    });
+    location.reload();
+}
+
+async function deletePhase(id) {
+    if (!confirm('Delete this phase and all its tasks?')) return;
+    await fetch('/api/template/phase/' + id, {method: 'DELETE'});
+    location.reload();
+}
+
+// ── Tasks ──
+function addTask(phaseId) {
+    document.getElementById('taskModalTitle').textContent = 'Add Task';
+    document.getElementById('taskSubmitBtn').textContent = 'Add Task';
+    document.getElementById('taskMode').value = 'add';
+    document.getElementById('taskPhaseId').value = phaseId;
+    document.getElementById('taskId').value = '';
+    document.getElementById('taskName').value = '';
+    document.getElementById('taskCat').value = '';
+    document.getElementById('taskOwner').value = 'Platform Team';
+    document.getElementById('taskJira').value = '';
+    document.getElementById('taskSampleRef').value = '';
+    document.getElementById('taskNotes').value = '';
+    document.querySelector('input[name="automation_type"][value="manual"]').checked = true;
+    document.getElementById('taskAutoConfig').value = '';
+    toggleAutoConfig();
+    showModal('taskModal');
+}
+
+function editTask(tt) {
+    document.getElementById('taskModalTitle').textContent = 'Edit Task';
+    document.getElementById('taskSubmitBtn').textContent = 'Save';
+    document.getElementById('taskMode').value = 'edit';
+    document.getElementById('taskId').value = tt.id;
+    document.getElementById('taskPhaseId').value = tt.template_phase_id;
+    document.getElementById('taskName').value = tt.task_name;
+    document.getElementById('taskCat').value = tt.category || '';
+    document.getElementById('taskOwner').value = tt.ownership || 'Platform Team';
+    document.getElementById('taskJira').value = tt.jira_reference || '';
+    document.getElementById('taskSampleRef').value = tt.sample_reference || '';
+    document.getElementById('taskNotes').value = tt.notes || '';
+    const autoType = tt.automation_type || 'manual';
+    const radio = document.querySelector('input[name="automation_type"][value="' + autoType + '"]');
+    if (radio) radio.checked = true;
+    document.getElementById('taskAutoConfig').value = (tt.automation_config && tt.automation_config !== '{}') ? tt.automation_config : '';
+    toggleAutoConfig();
+    showModal('taskModal');
+}
+
+async function submitTask(e) {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const mode = fd.get('mode');
+    const body = {
+        task_name: fd.get('task_name'), category: fd.get('category'),
+        ownership: fd.get('ownership'),
+        jira_reference: fd.get('jira_reference') || null,
+        sample_reference: fd.get('sample_reference') || null,
+        notes: fd.get('notes') || null,
+        automation_type: fd.get('automation_type'),
+    };
+    const acfg = fd.get('automation_config');
+    if (acfg) { try { body.automation_config = JSON.parse(acfg); } catch(e) { body.automation_config = {}; } }
+
+    if (mode === 'edit') {
+        await fetch('/api/template/task/' + fd.get('task_id'), {
+            method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+        });
+    } else {
+        await fetch('/api/template/phase/' + fd.get('phase_id') + '/task', {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+        });
+    }
+    location.reload();
+}
+
+async function deleteTask(id) {
+    if (!confirm('Delete this task?')) return;
+    await fetch('/api/template/task/' + id, {method: 'DELETE'});
+    location.reload();
+}
+
+function toggleAutoConfig() {
+    const v = document.querySelector('input[name="automation_type"]:checked').value;
+    document.getElementById('autoConfigSection').classList.toggle('hidden', v === 'manual');
+}
+
+// ── Dependencies ──
+async function addDependency() {
+    const pn = parseInt(document.getElementById('depPhase').value);
+    const dn = parseInt(document.getElementById('depPrereq').value);
+    if (pn === dn) { showToast('A phase cannot depend on itself', 'error'); return; }
+    await fetch('/api/template/' + TEMPLATE_ID + '/dependency', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({phase_number: pn, depends_on_phase_number: dn})
+    });
+    location.reload();
+}
+
+async function removeDep(id) {
+    await fetch('/api/template/dependency/' + id, {method: 'DELETE'});
+    location.reload();
+}
+
+// ── Export ──
+async function loadExport() {
+    const resp = await fetch('/api/template/' + TEMPLATE_ID + '/export');
+    const data = await resp.json();
+    document.getElementById('exportJson').value = JSON.stringify(data, null, 2);
+}
+
+function copyExport() {
+    const ta = document.getElementById('exportJson');
+    ta.select();
+    document.execCommand('copy');
+    showToast('Copied to clipboard', 'success');
+}
+
+document.addEventListener('DOMContentLoaded', initDAG);
+{% endif %}
+
+// ── Shared ──
+async function createAndRedirect(e) {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = Object.fromEntries(fd.entries());
+    const resp = await fetch('/api/template/create', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    });
+    const r = await resp.json();
+    if (r.ok) window.location.href = '/templates/' + r.template_id;
+}
+</script>
+{% endblock %}

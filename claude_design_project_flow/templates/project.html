@@ -1,0 +1,1029 @@
+{% extends "base.html" %}
+{% block title %}{{ project.project_name }} — Application Onboarding Portal{% endblock %}
+
+{% block head %}
+<style>
+    #dag-container { width: 100%; height: 340px; border-radius: 0.75rem; background: #0f172a; }
+    .phase-card { transition: all 0.2s ease; cursor: pointer; }
+    .phase-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    .phase-card.selected { ring: 2px solid #3b82f6; box-shadow: 0 0 0 2px #3b82f6; }
+    .task-row { transition: background 0.15s ease; }
+    .task-row:hover { background: #f8fafc; }
+    .status-btn { padding: 0.25rem 0.5rem; border-radius: 0.375rem; font-size: 0.75rem; font-weight: 600;
+                  cursor: pointer; border: 1px solid transparent; transition: all 0.15s; }
+    .status-btn:hover { filter: brightness(0.95); }
+    .tab-btn { padding: 0.5rem 1rem; font-size: 0.875rem; font-weight: 500; border-bottom: 2px solid transparent;
+               color: #64748b; cursor: pointer; transition: all 0.15s; }
+    .tab-btn.active { color: #2563eb; border-bottom-color: #2563eb; }
+    .tab-btn:hover { color: #334155; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="p-8">
+    <!-- Breadcrumb + Header -->
+    <div class="mb-6">
+        <div class="flex items-center gap-2 text-sm text-slate-500 mb-2">
+            <a href="/" class="hover:text-blue-600"><i class="fas fa-home"></i></a>
+            <i class="fas fa-chevron-right text-xs"></i>
+            <span>{{ project.project_name }}</span>
+        </div>
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-900">{{ project.project_name }}</h1>
+                <div class="flex items-center gap-3 mt-2">
+                    <span class="badge badge-blue">{{ project.domain }}</span>
+                    <span class="badge badge-gray">{{ project.environment }}</span>
+                    {% set proj_rag = rag_status({'start_date': project.start_date, 'target_completion': project.target_completion, 'total_tasks': total_tasks, 'completed_tasks': completed_tasks}) %}
+                    <span class="badge badge-{{ proj_rag }}">
+                        {{ RAG_LABELS[proj_rag] }}
+                    </span>
+                </div>
+            </div>
+            <div class="flex items-start gap-4">
+                <div class="text-right text-sm text-slate-500">
+                    <div><span class="font-medium text-slate-700">Team:</span> {{ project.team_name or '—' }}</div>
+                    <div><span class="font-medium text-slate-700">Target:</span> {{ project.start_date }} &rarr; {{ project.target_completion }}</div>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="showModal('editProjectModal')" class="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100">
+                        <i class="fas fa-pencil mr-1"></i>Edit
+                    </button>
+                    <button onclick="confirmDeleteProject()" class="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 rounded-md hover:bg-red-100">
+                        <i class="fas fa-trash mr-1"></i>Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Overall Progress Bar -->
+    <div class="card mb-6">
+        <div class="flex items-center justify-between mb-2">
+            <span class="text-sm font-medium text-slate-700">Overall Progress</span>
+            <span class="text-lg font-bold text-slate-900">{{ ((completed_tasks / (total_tasks or 1)) * 100)|round|int }}%</span>
+        </div>
+        <div class="progress-bar" style="height: 10px;">
+            <div class="progress-fill bg-blue-600" style="width: {{ (completed_tasks / (total_tasks or 1) * 100)|round }}%"></div>
+        </div>
+        <div class="flex justify-between mt-2 text-xs text-slate-500">
+            <span>{{ completed_tasks }} of {{ total_tasks }} tasks completed</span>
+            <span>{{ phases|selectattr('status', 'eq', 'completed')|list|length }}/{{ phases|length }} phases</span>
+        </div>
+    </div>
+
+    <!-- DAG Dependency Graph -->
+    <div class="card mb-6">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-semibold text-slate-900"><i class="fas fa-project-diagram text-blue-600 mr-2"></i>Phase Dependency Graph</h2>
+            <div class="flex items-center gap-4 text-xs text-slate-500">
+                <span><span class="status-dot bg-green-500 mr-1"></span>Completed</span>
+                <span><span class="status-dot bg-blue-500 mr-1"></span>In Progress</span>
+                <span><span class="status-dot bg-slate-400 mr-1"></span>Pending</span>
+            </div>
+        </div>
+        <div id="dag-container"></div>
+        <p class="text-xs text-slate-400 mt-2"><i class="fas fa-mouse-pointer mr-1"></i>Click a phase node to see details below. Scroll to zoom, drag to pan.</p>
+    </div>
+
+    <!-- Tabs: Phases / Deadlines / Timeline / Charts -->
+    <div class="border-b border-slate-200 mb-6 flex gap-1">
+        <button class="tab-btn active" onclick="switchTab('phases', this)">Phases</button>
+        <button class="tab-btn" onclick="switchTab('deadlines', this)">Deadlines</button>
+        <button class="tab-btn" onclick="switchTab('timeline', this)">Timeline</button>
+        <button class="tab-btn" onclick="switchTab('charts', this)">Analytics</button>
+    </div>
+
+    <!-- Phases Tab -->
+    <div id="tab-phases">
+        <div class="grid grid-cols-1 gap-4">
+            {% for ph in phases %}
+            <div class="card phase-card animate-in" id="phase-card-{{ ph.phase_number }}" style="animation-delay: {{ loop.index * 0.03 }}s">
+                <div class="flex items-start justify-between cursor-pointer" onclick="togglePhaseDetail({{ ph.phase_number }})">
+                    <div class="flex items-center gap-4">
+                        <div class="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-sm
+                            {% if ph.status == 'completed' %}bg-green-500{% elif ph.status == 'in_progress' %}bg-blue-500{% else %}bg-slate-400{% endif %}">
+                            {% if ph.status == 'completed' %}<i class="fas fa-check"></i>{% else %}{{ ph.phase_number }}{% endif %}
+                        </div>
+                        <div>
+                            <h3 class="font-semibold text-slate-900">
+                                Phase {{ ph.phase_number }}: {{ ph.phase_name }}
+                            </h3>
+                            <div class="flex items-center gap-3 mt-1 text-xs text-slate-500">
+                                <span>{{ ph.completed_tasks }}/{{ ph.total_tasks }} tasks</span>
+                                {% if ph.target_start %}<span><i class="fas fa-calendar mr-0.5"></i>{{ ph.target_start }} &rarr; {{ ph.target_end }}</span>{% endif %}
+                                {% if ph.prerequisites %}
+                                <span class="text-slate-400">Depends on:
+                                    {% for d in ph.prerequisites %}P{{ d.dep_num }}{% if not loop.last %}, {% endif %}{% endfor %}
+                                </span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <div class="text-right">
+                            <span class="text-sm font-bold text-slate-700">{{ ph.progress }}%</span>
+                            <div class="progress-bar w-24 mt-1"><div class="progress-fill {% if ph.status == 'completed' %}bg-green-500{% elif ph.status == 'in_progress' %}bg-blue-500{% else %}bg-slate-400{% endif %}" style="width: {{ ph.progress }}%"></div></div>
+                        </div>
+                        <button onclick="event.stopPropagation(); editPhase({{ ph|tojson|e }})" class="p-1.5 text-slate-400 hover:text-blue-600 rounded" title="Edit Phase"><i class="fas fa-pencil text-xs"></i></button>
+                        <button onclick="event.stopPropagation(); deletePhase({{ ph.id }}, '{{ ph.phase_name|e }}')" class="p-1.5 text-slate-400 hover:text-red-600 rounded" title="Delete Phase"><i class="fas fa-trash text-xs"></i></button>
+                        <i class="fas fa-chevron-down text-slate-400 text-xs transition-transform" id="chevron-{{ ph.phase_number }}"></i>
+                    </div>
+                </div>
+                <!-- Task Detail (hidden by default) -->
+                <div id="detail-{{ ph.phase_number }}" class="hidden mt-4 border-t border-slate-100 pt-4">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="text-xs text-slate-500 uppercase tracking-wider">
+                                <th class="text-left py-2 font-medium">#</th>
+                                <th class="text-left py-2 font-medium">Task</th>
+                                <th class="text-left py-2 font-medium">Owner</th>
+                                <th class="text-left py-2 font-medium">Status</th>
+                                <th class="text-right py-2 font-medium">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for t in tasks_by_phase.get(ph.id, []) %}
+                            <tr class="task-row border-t border-slate-50" id="task-{{ t.id }}">
+                                <td class="py-2.5 text-slate-400">{{ t.task_order }}</td>
+                                <td class="py-2.5">
+                                    <span class="text-slate-900 font-medium">{{ t.task_name }}</span>
+                                    {% if t.category %}<span class="badge badge-gray ml-2">{{ t.category }}</span>{% endif %}
+                                    {% if t.notes %}<i class="fas fa-comment text-slate-300 text-xs ml-1 tooltip" data-tip="{{ t.notes }}"></i>{% endif %}
+                                    {% if t.jira_reference %}<a href="#" class="text-blue-600 text-xs ml-2">{{ t.jira_reference }}</a>{% endif %}
+                                </td>
+                                <td class="py-2.5 text-slate-600 text-xs">{{ t.ownership }}</td>
+                                <td class="py-2.5">
+                                    {% if t.status == 'completed' %}<span class="badge badge-green"><i class="fas fa-check mr-1"></i>Done</span>
+                                    {% elif t.status == 'in_progress' %}<span class="badge badge-blue"><i class="fas fa-spinner mr-1"></i>Active</span>
+                                    {% else %}<span class="badge badge-gray">Pending</span>{% endif %}
+                                </td>
+                                <td class="py-2.5 text-right">
+                                    {% if t.status == 'pending' %}
+                                    <button class="status-btn bg-blue-50 text-blue-700 border-blue-200" onclick="updateTask({{ t.id }}, 'in_progress')">Start</button>
+                                    {% elif t.status == 'in_progress' %}
+                                    <button class="status-btn bg-green-50 text-green-700 border-green-200" onclick="updateTask({{ t.id }}, 'completed')">Complete</button>
+                                    {% else %}
+                                    <button class="status-btn bg-slate-50 text-slate-600 border-slate-200" onclick="updateTask({{ t.id }}, 'pending')">Reset</button>
+                                    {% endif %}
+                                    <button class="status-btn bg-amber-50 text-amber-700 border-amber-200 ml-1" onclick="editProjectTask({{ t|tojson|e }})"><i class="fas fa-pencil"></i></button>
+                                    <button class="status-btn bg-red-50 text-red-700 border-red-200 ml-1" onclick="deleteProjectTask({{ t.id }}, '{{ t.task_name|e }}')"><i class="fas fa-trash"></i></button>
+                                    {% if t.actions_raw %}
+                                    {% for action in t.actions_raw.split(';;') %}
+                                    {% set parts = action.split('|') %}
+                                    <a href="{{ parts[1] }}" target="_blank" class="status-btn bg-purple-50 text-purple-700 border-purple-200 ml-1">{{ parts[0] }}</a>
+                                    {% endfor %}
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Add Task / Phase -->
+        <div class="mt-6 flex gap-4">
+            <button class="card card-hover text-sm font-medium text-blue-600 flex items-center gap-2" onclick="showModal('addTaskModal')">
+                <i class="fas fa-plus-circle"></i> Add Task
+            </button>
+            <button class="card card-hover text-sm font-medium text-purple-600 flex items-center gap-2" onclick="showModal('addPhaseModal')">
+                <i class="fas fa-plus-circle"></i> Add Phase
+            </button>
+        </div>
+    </div>
+
+    <!-- Deadlines Tab -->
+    <div id="tab-deadlines" class="hidden">
+        <div class="grid grid-cols-4 gap-4 mb-6">
+            <div class="card text-center">
+                <p class="text-2xl font-bold text-slate-900" id="dl-total">-</p>
+                <p class="text-xs text-slate-500 mt-1">Total Deadlines</p>
+            </div>
+            <div class="card text-center">
+                <p class="text-2xl font-bold text-green-600" id="dl-ontime">-</p>
+                <p class="text-xs text-slate-500 mt-1">On Time / Early</p>
+            </div>
+            <div class="card text-center">
+                <p class="text-2xl font-bold text-amber-500" id="dl-minor">-</p>
+                <p class="text-xs text-slate-500 mt-1">Minor Slip (1-3d)</p>
+            </div>
+            <div class="card text-center">
+                <p class="text-2xl font-bold text-red-500" id="dl-major">-</p>
+                <p class="text-xs text-slate-500 mt-1">Major Slip (>3d)</p>
+            </div>
+        </div>
+
+        <div class="card mb-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-sm font-semibold text-slate-900"><i class="fas fa-calendar-check text-blue-600 mr-2"></i>Phase Deadlines by Team</h3>
+                <button onclick="showModal('addDeadlineModal')" class="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100">
+                    <i class="fas fa-plus mr-1"></i> Set Deadline
+                </button>
+            </div>
+            <table class="w-full text-sm" id="deadlinesTable">
+                <thead>
+                    <tr class="text-xs text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                        <th class="text-left py-3 font-medium">Phase</th>
+                        <th class="text-left py-3 font-medium">Team</th>
+                        <th class="text-left py-3 font-medium">Planned</th>
+                        <th class="text-left py-3 font-medium">Agreed</th>
+                        <th class="text-left py-3 font-medium">Actual</th>
+                        <th class="text-left py-3 font-medium">Variance</th>
+                        <th class="text-left py-3 font-medium">Notes</th>
+                        <th class="text-right py-3 font-medium">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="deadlinesBody">
+                    <!-- Populated by JS -->
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <h3 class="text-sm font-semibold text-slate-900 mb-4"><i class="fas fa-chart-bar text-blue-600 mr-2"></i>Variance by Phase</h3>
+            <div style="height: 280px;"><canvas id="varianceChart"></canvas></div>
+        </div>
+    </div>
+
+    <!-- Timeline Tab -->
+    <div id="tab-timeline" class="hidden">
+        <div class="card">
+            <h3 class="text-sm font-semibold text-slate-900 mb-4">Phase Timeline (Planned vs Actual)</h3>
+            <div style="height: 360px; position: relative;"><canvas id="timelineChart"></canvas></div>
+        </div>
+    </div>
+
+    <!-- Charts Tab -->
+    <div id="tab-charts" class="hidden">
+        <div class="grid grid-cols-2 gap-6">
+            <div class="card">
+                <h3 class="text-sm font-semibold text-slate-900 mb-4">Tasks by Status</h3>
+                <div style="height: 260px; position: relative;"><canvas id="statusChart"></canvas></div>
+            </div>
+            <div class="card">
+                <h3 class="text-sm font-semibold text-slate-900 mb-4">Tasks by Phase</h3>
+                <div style="height: 260px; position: relative;"><canvas id="phaseChart"></canvas></div>
+            </div>
+            <div class="card col-span-2">
+                <h3 class="text-sm font-semibold text-slate-900 mb-4">Ownership Breakdown</h3>
+                <div style="height: 220px; position: relative;"><canvas id="ownerChart"></canvas></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Task Modal -->
+<div class="modal-backdrop" id="addTaskModal">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-slate-900">Add New Task</h3>
+            <button onclick="hideModal('addTaskModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+        </div>
+        <form id="addTaskForm" onsubmit="submitTask(event)" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Phase</label>
+                <select name="phase_id" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    {% for ph in phases %}
+                    <option value="{{ ph.id }}">P{{ ph.phase_number }}: {{ ph.phase_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Task Name</label>
+                <input type="text" name="task_name" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., Create IAM Role">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Category</label>
+                    <input type="text" name="category" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., AWS">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Ownership</label>
+                    <select name="ownership" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        <option value="Platform Team">Platform Team</option>
+                        <option value="App Team">App Team</option>
+                    </select>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Priority</label>
+                    <select name="priority" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="critical">Critical</option>
+                        <option value="low">Low</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Est. Minutes</label>
+                    <input type="number" name="estimated_minutes" value="30" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="hideModal('addTaskModal')" class="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
+                <button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">Add Task</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Add Phase Modal -->
+<div class="modal-backdrop" id="addPhaseModal">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-slate-900">Add New Phase</h3>
+            <button onclick="hideModal('addPhaseModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+        </div>
+        <form id="addPhaseForm" onsubmit="submitPhase(event)" class="space-y-4">
+            <input type="hidden" name="project_id" value="{{ project.id }}">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Phase Number</label>
+                    <input type="number" name="phase_number" min="1" value="{{ phases|length + 1 }}" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Phase Name</label>
+                    <input type="text" name="phase_name" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., Post-Go-Live">
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Depends On (select prerequisites)</label>
+                <div class="space-y-2 max-h-40 overflow-y-auto border border-slate-200 rounded-lg p-3">
+                    {% for ph in phases %}
+                    <label class="flex items-center gap-2 text-sm cursor-pointer">
+                        <input type="checkbox" name="depends_on" value="{{ ph.id }}" class="rounded text-blue-600">
+                        P{{ ph.phase_number }}: {{ ph.phase_name }}
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="hideModal('addPhaseModal')" class="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
+                <button type="submit" class="px-4 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium">Add Phase</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Project Modal -->
+<div class="modal-backdrop" id="editProjectModal">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-slate-900">Edit Project</h3>
+            <button onclick="hideModal('editProjectModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+        </div>
+        <form id="editProjectForm" onsubmit="submitEditProject(event)" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Project Name</label>
+                <input type="text" name="project_name" value="{{ project.project_name }}" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Domain</label>
+                    <select name="domain" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        {% for d in ['dom', 'dom_1', 'dom_2', 'dom_3', 'dom_4', 'dom_5'] %}
+                        <option value="{{ d }}" {% if project.domain == d %}selected{% endif %}>{{ d }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Environment</label>
+                    <select name="environment" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        {% for e in ['dev', 'stage', 'prod'] %}
+                        <option value="{{ e }}" {% if project.environment == e %}selected{% endif %}>{{ e }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Team Name</label>
+                    <input type="text" name="team_name" value="{{ project.team_name or '' }}" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Team Email</label>
+                    <input type="email" name="team_email" value="{{ project.team_email or '' }}" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Start Date</label>
+                    <input type="date" name="start_date" value="{{ project.start_date }}" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Target Completion</label>
+                    <input type="date" name="target_completion" value="{{ project.target_completion }}" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Status</label>
+                <select name="status" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    {% for s in ['planning', 'in_progress', 'on_hold', 'completed', 'cancelled'] %}
+                    <option value="{{ s }}" {% if project.status == s %}selected{% endif %}>{{ s|replace('_', ' ')|title }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="hideModal('editProjectModal')" class="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
+                <button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Add/Edit Deadline Modal -->
+<div class="modal-backdrop" id="addDeadlineModal">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-slate-900">Set Phase Deadline</h3>
+            <button onclick="hideModal('addDeadlineModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="space-y-4">
+            <input type="hidden" id="dl-phase-num">
+            <div class="bg-slate-50 rounded-lg p-3">
+                <p class="text-sm text-slate-500">Phase</p>
+                <p class="font-semibold text-slate-900" id="dl-phase-name">-</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Team Ownership</label>
+                <select id="dl-ownership" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
+                    <option value="Platform Team">Platform Team</option>
+                    <option value="App Team">App Team</option>
+                </select>
+            </div>
+            <div class="grid grid-cols-3 gap-3">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Planned Date</label>
+                    <input type="date" id="dl-planned" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Agreed Date</label>
+                    <input type="date" id="dl-agreed" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Actual Date</label>
+                    <input type="date" id="dl-actual" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Notes</label>
+                <textarea id="dl-notes" rows="2" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="Optional notes..."></textarea>
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="hideModal('addDeadlineModal')" class="px-4 py-2 text-sm text-slate-600">Cancel</button>
+                <button onclick="saveDeadline()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">Save Deadline</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Phase Modal -->
+<div class="modal-backdrop" id="editPhaseModal">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-slate-900">Edit Phase</h3>
+            <button onclick="hideModal('editPhaseModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+        </div>
+        <form id="editPhaseForm" onsubmit="submitEditPhase(event)" class="space-y-4">
+            <input type="hidden" name="phase_id" id="editPhaseId">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Phase Number</label>
+                    <input type="number" name="phase_number" id="editPhaseNum" min="1" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Status</label>
+                    <select name="status" id="editPhaseStatus" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                        <option value="pending">Pending</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="completed">Completed</option>
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Phase Name</label>
+                <input type="text" name="phase_name" id="editPhaseName" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Target Start</label>
+                    <input type="date" name="target_start" id="editPhaseStart" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Target End</label>
+                    <input type="date" name="target_end" id="editPhaseEnd" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="hideModal('editPhaseModal')" class="px-4 py-2 text-sm text-slate-600">Cancel</button>
+                <button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Task Modal for Project Page -->
+<div class="modal-backdrop" id="editTaskModal">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-slate-900">Edit Task</h3>
+            <button onclick="hideModal('editTaskModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+        </div>
+        <form id="editTaskForm" onsubmit="submitEditProjectTask(event)" class="space-y-4">
+            <input type="hidden" name="task_id" id="editTaskId">
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Task Name</label>
+                <input type="text" name="task_name" id="editTaskName" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Category</label>
+                    <input type="text" name="category" id="editTaskCat" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Ownership</label>
+                    <select name="ownership" id="editTaskOwner" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                        <option value="Platform Team">Platform Team</option>
+                        <option value="App Team">App Team</option>
+                    </select>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Jira Reference</label>
+                    <input type="text" name="jira_reference" id="editTaskJira" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., Application-1234">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Sample Reference</label>
+                    <input type="text" name="sample_reference" id="editTaskSampleRef" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="Link or doc">
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Notes</label>
+                <textarea name="notes" id="editTaskNotes" rows="2" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="Comments, ticket references..."></textarea>
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="hideModal('editTaskModal')" class="px-4 py-2 text-sm text-slate-600">Cancel</button>
+                <button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PROJECT_ID = {{ project.id }};
+
+// ── Tabs ──
+function switchTab(tab, btn) {
+    document.querySelectorAll('[id^="tab-"]').forEach(el => el.classList.add('hidden'));
+    document.getElementById('tab-' + tab).classList.remove('hidden');
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    if (tab === 'charts' || tab === 'timeline') loadCharts();
+    if (tab === 'deadlines') loadDeadlines();
+}
+
+// ── Phase Detail Toggle ──
+function togglePhaseDetail(num) {
+    const detail = document.getElementById('detail-' + num);
+    const chevron = document.getElementById('chevron-' + num);
+    detail.classList.toggle('hidden');
+    chevron.style.transform = detail.classList.contains('hidden') ? '' : 'rotate(180deg)';
+}
+
+// ── DAG ──
+async function initDAG() {
+    const resp = await fetch('/api/project/' + PROJECT_ID + '/dag');
+    const data = await resp.json();
+    const container = document.getElementById('dag-container');
+    const network = new vis.Network(container, {nodes: new vis.DataSet(data.nodes), edges: new vis.DataSet(data.edges)}, {
+        layout: {
+            hierarchical: { direction: 'LR', sortMethod: 'directed', nodeSpacing: 120, levelSeparation: 200, treeSpacing: 100 }
+        },
+        physics: false,
+        interaction: { hover: true, tooltipDelay: 200, zoomView: true, dragView: true },
+        nodes: { borderWidth: 2, shadow: true, font: { size: 13 } },
+        edges: { smooth: { type: 'cubicBezier' } }
+    });
+    network.on('click', function(params) {
+        if (params.nodes.length > 0) {
+            const phaseNum = params.nodes[0];
+            const el = document.getElementById('phase-card-' + phaseNum);
+            if (el) {
+                el.scrollIntoView({behavior: 'smooth', block: 'center'});
+                el.classList.add('ring-2', 'ring-blue-500');
+                setTimeout(() => el.classList.remove('ring-2', 'ring-blue-500'), 2000);
+                // Auto-expand
+                const detail = document.getElementById('detail-' + phaseNum);
+                if (detail && detail.classList.contains('hidden')) togglePhaseDetail(phaseNum);
+            }
+        }
+    });
+}
+
+// ── Charts ──
+let chartsLoaded = false;
+async function loadCharts() {
+    if (chartsLoaded) return;
+    chartsLoaded = true;
+    const resp = await fetch('/api/project/' + PROJECT_ID + '/stats');
+    const data = await resp.json();
+
+    // Status doughnut
+    const statusCtx = document.getElementById('statusChart');
+    if (statusCtx) {
+        new Chart(statusCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Completed', 'In Progress', 'Pending'],
+                datasets: [{
+                    data: [data.task_stats.completed||0, data.task_stats.in_progress||0, data.task_stats.pending||0],
+                    backgroundColor: ['#22c55e', '#3b82f6', '#94a3b8'], borderWidth: 0, spacing: 2
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, cutout: '60%',
+                plugins: { legend: { position: 'bottom', labels: { padding: 12, usePointStyle: true, font: { size: 11, family: 'Inter' } } } } }
+        });
+    }
+
+    // Phase bar chart
+    const phaseCtx = document.getElementById('phaseChart');
+    if (phaseCtx) {
+        new Chart(phaseCtx, {
+            type: 'bar',
+            data: {
+                labels: data.phase_stats.map(p => 'P' + p.phase_number),
+                datasets: [
+                    { label: 'Completed', data: data.phase_stats.map(p => p.completed), backgroundColor: '#22c55e', borderRadius: 4 },
+                    { label: 'Remaining', data: data.phase_stats.map(p => p.total - p.completed), backgroundColor: '#e2e8f0', borderRadius: 4 }
+                ]
+            },
+            options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } },
+                plugins: { legend: { position: 'bottom', labels: { padding: 12, usePointStyle: true, font: { size: 11, family: 'Inter' } } } } }
+        });
+    }
+
+    // Ownership
+    const ownerCtx = document.getElementById('ownerChart');
+    if (ownerCtx) {
+        new Chart(ownerCtx, {
+            type: 'bar',
+            data: {
+                labels: data.ownership_stats.map(o => o.ownership),
+                datasets: [
+                    { label: 'Completed', data: data.ownership_stats.map(o => o.completed), backgroundColor: '#22c55e', borderRadius: 4 },
+                    { label: 'Remaining', data: data.ownership_stats.map(o => o.total - o.completed), backgroundColor: '#e2e8f0', borderRadius: 4 }
+                ]
+            },
+            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true, beginAtZero: true }, y: { stacked: true } },
+                plugins: { legend: { position: 'bottom', labels: { padding: 12, usePointStyle: true, font: { size: 11, family: 'Inter' } } } } }
+        });
+    }
+
+    // Timeline
+    const timeCtx = document.getElementById('timelineChart');
+    if (timeCtx && data.timeline.length > 0) {
+        const minDate = new Date(data.timeline[0].target_start || data.timeline[0].started_at);
+        const labels = data.timeline.map(t => 'P' + t.phase_number + ': ' + t.phase_name);
+        const planned = data.timeline.map(t => {
+            if (!t.target_start || !t.target_end) return [0, 0];
+            return [daysDiff(minDate, new Date(t.target_start)), daysDiff(minDate, new Date(t.target_end))];
+        });
+        const actual = data.timeline.map(t => {
+            const s = t.started_at ? new Date(t.started_at) : null;
+            const e = t.completed_at ? new Date(t.completed_at) : (t.status === 'in_progress' ? new Date() : null);
+            if (!s) return [0, 0];
+            return [daysDiff(minDate, s), daysDiff(minDate, e || s)];
+        });
+        new Chart(timeCtx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    { label: 'Planned', data: planned, backgroundColor: '#dbeafe', borderColor: '#3b82f6', borderWidth: 1, borderRadius: 4, borderSkipped: false },
+                    { label: 'Actual', data: actual, backgroundColor: data.timeline.map(t => t.status === 'completed' ? '#bbf7d0' : t.status === 'in_progress' ? '#bfdbfe' : '#f1f5f9'),
+                      borderColor: data.timeline.map(t => t.status === 'completed' ? '#22c55e' : t.status === 'in_progress' ? '#3b82f6' : '#94a3b8'), borderWidth: 1, borderRadius: 4, borderSkipped: false }
+                ]
+            },
+            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                scales: { x: { title: { display: true, text: 'Days from start' }, beginAtZero: true }, y: {} },
+                plugins: { legend: { position: 'bottom', labels: { padding: 12, usePointStyle: true, font: { size: 11, family: 'Inter' } } },
+                    tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': Day ' + ctx.raw[0] + ' to Day ' + ctx.raw[1] } } } }
+        });
+    }
+}
+
+function daysDiff(a, b) { return Math.round((b - a) / 86400000); }
+
+// ── Task Status Update ──
+async function updateTask(taskId, status) {
+    const resp = await fetch('/api/task/' + taskId + '/status', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({status: status})
+    });
+    if (resp.ok) location.reload();
+}
+
+// ── Modals ──
+function showModal(id) { document.getElementById(id).classList.add('show'); }
+function hideModal(id) { document.getElementById(id).classList.remove('show'); }
+
+async function submitTask(e) {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = Object.fromEntries(fd.entries());
+    body.phase_id = parseInt(body.phase_id);
+    body.estimated_minutes = parseInt(body.estimated_minutes) || 30;
+    await fetch('/api/task/create', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    });
+    location.reload();
+}
+
+async function submitPhase(e) {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = {
+        project_id: parseInt(fd.get('project_id')),
+        phase_number: parseInt(fd.get('phase_number')),
+        phase_name: fd.get('phase_name'),
+        depends_on: fd.getAll('depends_on').map(Number)
+    };
+    await fetch('/api/phase/create', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    });
+    location.reload();
+}
+
+// ── Deadlines ──
+let varianceChart = null;
+const PHASES_DATA = {{ phases|tojson }};
+
+async function loadDeadlines() {
+    const resp = await fetch('/api/project/' + PROJECT_ID + '/variance');
+    const data = await resp.json();
+
+    // Update stats cards
+    document.getElementById('dl-total').textContent = data.stats.total_deadlines;
+    document.getElementById('dl-ontime').textContent = data.stats.on_time;
+    document.getElementById('dl-minor').textContent = data.stats.minor_slip;
+    document.getElementById('dl-major').textContent = data.stats.major_slip;
+
+    // Build table
+    const tbody = document.getElementById('deadlinesBody');
+    tbody.innerHTML = '';
+
+    // Group by phase
+    const grouped = {};
+    data.phase_deadlines.forEach(d => {
+        if (!grouped[d.phase_number]) grouped[d.phase_number] = {name: d.phase_name, rows: []};
+        if (d.ownership) grouped[d.phase_number].rows.push(d);
+    });
+
+    // Also show phases without deadlines
+    PHASES_DATA.forEach(p => {
+        if (!grouped[p.phase_number]) {
+            grouped[p.phase_number] = {name: p.phase_name, rows: []};
+        }
+    });
+
+    Object.keys(grouped).sort((a,b) => a-b).forEach(pnum => {
+        const g = grouped[pnum];
+        if (g.rows.length === 0) {
+            // No deadlines set for this phase
+            tbody.innerHTML += `<tr class="border-t border-slate-100">
+                <td class="py-3 font-medium text-slate-700">P${pnum}: ${g.name}</td>
+                <td colspan="6" class="py-3 text-slate-400 text-xs">No deadlines set</td>
+                <td class="py-3 text-right">
+                    <button onclick="openDeadlineModal(${pnum}, '${g.name}', 'Platform Team')" class="px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100">+ Platform</button>
+                    <button onclick="openDeadlineModal(${pnum}, '${g.name}', 'App Team')" class="px-2 py-1 text-xs bg-purple-50 text-purple-700 rounded hover:bg-purple-100 ml-1">+ App Team</button>
+                </td>
+            </tr>`;
+        } else {
+            g.rows.forEach((d, idx) => {
+                const vClass = d.variance_days === null ? 'text-slate-400' :
+                    d.variance_days <= 0 ? 'text-green-600' :
+                    d.variance_days <= 3 ? 'text-amber-500' : 'text-red-500';
+                const vText = d.variance_days === null ? '—' :
+                    d.variance_days === 0 ? 'On time' :
+                    d.variance_days < 0 ? `${Math.abs(d.variance_days)}d early` : `${d.variance_days}d late`;
+                tbody.innerHTML += `<tr class="border-t border-slate-100">
+                    <td class="py-3 ${idx > 0 ? 'text-transparent' : 'font-medium text-slate-700'}">P${pnum}: ${g.name}</td>
+                    <td class="py-3"><span class="badge ${d.ownership === 'Platform Team' ? 'badge-blue' : 'badge-purple'}">${d.ownership}</span></td>
+                    <td class="py-3 text-slate-600">${d.planned_date || '—'}</td>
+                    <td class="py-3 text-slate-600 font-medium">${d.agreed_date || '—'}</td>
+                    <td class="py-3 text-slate-600">${d.actual_date || '—'}</td>
+                    <td class="py-3 font-medium ${vClass}">${vText}</td>
+                    <td class="py-3 text-slate-500 text-xs">${d.notes || ''}</td>
+                    <td class="py-3 text-right">
+                        <button onclick="openDeadlineModal(${pnum}, '${g.name}', '${d.ownership}', ${JSON.stringify(d).replace(/"/g, '&quot;')})" class="px-2 py-1 text-xs bg-slate-100 text-slate-600 rounded hover:bg-slate-200">Edit</button>
+                    </td>
+                </tr>`;
+            });
+        }
+    });
+
+    // Variance chart
+    const chartData = Object.keys(grouped).sort((a,b) => a-b).map(pnum => {
+        const g = grouped[pnum];
+        const platformRow = g.rows.find(r => r.ownership === 'Platform Team');
+        const appRow = g.rows.find(r => r.ownership === 'App Team');
+        return {
+            phase: `P${pnum}`,
+            platform: platformRow?.variance_days || 0,
+            app: appRow?.variance_days || 0
+        };
+    });
+
+    if (varianceChart) varianceChart.destroy();
+    const ctx = document.getElementById('varianceChart').getContext('2d');
+    varianceChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: chartData.map(d => d.phase),
+            datasets: [
+                { label: 'Platform Team', data: chartData.map(d => d.platform), backgroundColor: '#3b82f6' },
+                { label: 'App Team', data: chartData.map(d => d.app), backgroundColor: '#a855f7' }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom' } },
+            scales: {
+                y: { title: { display: true, text: 'Variance (days)' },
+                     grid: { color: '#f1f5f9' } }
+            }
+        }
+    });
+}
+
+function openDeadlineModal(phaseNum, phaseName, ownership, existing = null) {
+    document.getElementById('dl-phase-num').value = phaseNum;
+    document.getElementById('dl-phase-name').textContent = `P${phaseNum}: ${phaseName}`;
+    document.getElementById('dl-ownership').value = ownership;
+    document.getElementById('dl-planned').value = existing?.planned_date || '';
+    document.getElementById('dl-agreed').value = existing?.agreed_date || '';
+    document.getElementById('dl-actual').value = existing?.actual_date || '';
+    document.getElementById('dl-notes').value = existing?.notes || '';
+    showModal('addDeadlineModal');
+}
+
+async function saveDeadline() {
+    const phaseNum = parseInt(document.getElementById('dl-phase-num').value);
+    // Get phase_id from phase_number
+    const phase = PHASES_DATA.find(p => p.phase_number === phaseNum);
+    if (!phase) return showToast('Phase not found', 'error');
+
+    const body = {
+        ownership: document.getElementById('dl-ownership').value,
+        planned_date: document.getElementById('dl-planned').value || null,
+        agreed_date: document.getElementById('dl-agreed').value || null,
+        actual_date: document.getElementById('dl-actual').value || null,
+        notes: document.getElementById('dl-notes').value
+    };
+
+    const resp = await fetch('/api/phase/' + phase.id + '/deadline', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    });
+    const r = await resp.json();
+    if (r.ok) {
+        hideModal('addDeadlineModal');
+        loadDeadlines();
+        showToast('Deadline saved', 'success');
+    } else {
+        showToast(r.detail || 'Error', 'error');
+    }
+}
+
+// ── Project Edit/Delete ──
+async function submitEditProject(e) {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = Object.fromEntries(fd.entries());
+    const resp = await fetch('/api/project/' + PROJECT_ID, {
+        method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    });
+    const r = await resp.json();
+    if (r.ok) {
+        hideModal('editProjectModal');
+        showToast('Project updated', 'success');
+        setTimeout(() => location.reload(), 500);
+    } else {
+        showToast(r.detail || 'Error', 'error');
+    }
+}
+
+async function confirmDeleteProject() {
+    if (!confirm('Are you sure you want to delete this project? This will remove all phases, tasks, and associated data. This action cannot be undone.')) return;
+    const resp = await fetch('/api/project/' + PROJECT_ID, {method: 'DELETE'});
+    const r = await resp.json();
+    if (r.ok) {
+        showToast('Project deleted', 'success');
+        setTimeout(() => window.location.href = '/', 500);
+    } else {
+        showToast(r.detail || 'Error', 'error');
+    }
+}
+
+// ── Phase Edit/Delete ──
+function editPhase(phase) {
+    document.getElementById('editPhaseId').value = phase.id;
+    document.getElementById('editPhaseNum').value = phase.phase_number;
+    document.getElementById('editPhaseName').value = phase.phase_name;
+    document.getElementById('editPhaseStatus').value = phase.status || 'pending';
+    document.getElementById('editPhaseStart').value = phase.target_start || '';
+    document.getElementById('editPhaseEnd').value = phase.target_end || '';
+    showModal('editPhaseModal');
+}
+
+async function submitEditPhase(e) {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const phaseId = fd.get('phase_id');
+    const body = {
+        phase_number: parseInt(fd.get('phase_number')),
+        phase_name: fd.get('phase_name'),
+        status: fd.get('status'),
+        target_start: fd.get('target_start') || null,
+        target_end: fd.get('target_end') || null
+    };
+    const resp = await fetch('/api/phase/' + phaseId, {
+        method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    });
+    if (resp.ok) {
+        hideModal('editPhaseModal');
+        showToast('Phase updated', 'success');
+        setTimeout(() => location.reload(), 500);
+    } else {
+        showToast('Error updating phase', 'error');
+    }
+}
+
+async function deletePhase(phaseId, phaseName) {
+    if (!confirm('Delete phase "' + phaseName + '" and all its tasks? This action cannot be undone.')) return;
+    const resp = await fetch('/api/phase/' + phaseId, {method: 'DELETE'});
+    if (resp.ok) {
+        showToast('Phase deleted', 'success');
+        setTimeout(() => location.reload(), 500);
+    } else {
+        showToast('Error deleting phase', 'error');
+    }
+}
+
+// ── Task Edit/Delete on Project Page ──
+function editProjectTask(task) {
+    document.getElementById('editTaskId').value = task.id;
+    document.getElementById('editTaskName').value = task.task_name || '';
+    document.getElementById('editTaskCat').value = task.category || '';
+    document.getElementById('editTaskOwner').value = task.ownership || 'Platform Team';
+    document.getElementById('editTaskJira').value = task.jira_reference || '';
+    document.getElementById('editTaskSampleRef').value = task.sample_reference || '';
+    document.getElementById('editTaskNotes').value = task.notes || '';
+    showModal('editTaskModal');
+}
+
+async function submitEditProjectTask(e) {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const taskId = fd.get('task_id');
+    const body = {
+        task_name: fd.get('task_name'),
+        category: fd.get('category'),
+        ownership: fd.get('ownership'),
+        jira_reference: fd.get('jira_reference') || null,
+        sample_reference: fd.get('sample_reference') || null,
+        notes: fd.get('notes') || null
+    };
+    const resp = await fetch('/api/task/' + taskId, {
+        method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    });
+    if (resp.ok) {
+        hideModal('editTaskModal');
+        showToast('Task updated', 'success');
+        setTimeout(() => location.reload(), 500);
+    } else {
+        showToast('Error updating task', 'error');
+    }
+}
+
+async function deleteProjectTask(taskId, taskName) {
+    if (!confirm('Delete task "' + taskName + '"? This action cannot be undone.')) return;
+    const resp = await fetch('/api/task/' + taskId, {method: 'DELETE'});
+    if (resp.ok) {
+        showToast('Task deleted', 'success');
+        setTimeout(() => location.reload(), 500);
+    } else {
+        showToast('Error deleting task', 'error');
+    }
+}
+
+// Init
+document.addEventListener('DOMContentLoaded', initDAG);
+</script>
+{% endblock %}

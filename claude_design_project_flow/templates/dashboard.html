@@ -1,0 +1,548 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Application Onboarding Portal{% endblock %}
+
+{% block content %}
+<div class="p-8">
+    <!-- Header with View Switcher -->
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900">Portfolio Dashboard</h1>
+            <p class="text-slate-500 text-sm mt-1">Real-time overview of all onboarding projects</p>
+        </div>
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2">
+                <span class="text-sm text-slate-500">View:</span>
+                <select id="viewSwitcher" onchange="switchView(this.value)" class="border border-slate-300 rounded-lg px-3 py-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    <option value="portfolio" {% if view == 'portfolio' %}selected{% endif %}>Portfolio Overview</option>
+                    <option value="execution" {% if view == 'execution' %}selected{% endif %}>Execution Status</option>
+                    <option value="management" {% if view == 'management' %}selected{% endif %}>Management Summary</option>
+                </select>
+            </div>
+            <button onclick="showModal('addDomainModal')" class="px-3 py-2 text-sm font-medium bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200">
+                <i class="fas fa-folder-plus mr-1"></i> Add Domain
+            </button>
+            <button onclick="showModal('addEnvModal')" class="px-3 py-2 text-sm font-medium bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200">
+                <i class="fas fa-server mr-1"></i> Add Environment
+            </button>
+        </div>
+    </div>
+
+    <!-- GETTING STARTED WIZARD (shown when no projects yet) -->
+    {% if total_projects == 0 %}
+    {% set has_domains = sidebar_domains|length > 0 %}
+    {% set has_templates = templates_count > 0 %}
+    <div class="card mb-8 border-2 border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+        <div class="flex items-start gap-6">
+            <div class="w-16 h-16 rounded-xl bg-blue-600 flex items-center justify-center flex-shrink-0">
+                <i class="fas fa-rocket text-white text-2xl"></i>
+            </div>
+            <div class="flex-1">
+                <h2 class="text-xl font-bold text-slate-900 mb-2">
+                    {% if not has_domains %}Welcome! Let's Get Started
+                    {% elif not has_templates %}Step 2: Create a Template
+                    {% else %}Step 3: Create Your First Project{% endif %}
+                </h2>
+                <p class="text-slate-600 mb-6">
+                    {% if not has_domains %}Follow these steps to set up your onboarding portal:
+                    {% elif not has_templates %}Define your workflow phases and tasks
+                    {% else %}You're ready! Create a project using your template{% endif %}
+                </p>
+
+                <div class="grid grid-cols-3 gap-6">
+                    <!-- Step 1: Domain -->
+                    <div class="relative">
+                        <div class="flex items-center gap-3 mb-3">
+                            <div class="w-8 h-8 rounded-full {% if has_domains %}bg-green-500{% else %}bg-blue-600{% endif %} text-white flex items-center justify-center font-bold text-sm">
+                                {% if has_domains %}<i class="fas fa-check text-xs"></i>{% else %}1{% endif %}
+                            </div>
+                            <h3 class="font-semibold text-slate-900">Create Domain</h3>
+                        </div>
+                        <p class="text-sm text-slate-500 mb-3 ml-11">
+                            {% if has_domains %}{{ sidebar_domains|length }} domain(s) created{% else %}Define your business domains{% endif %}
+                        </p>
+                        {% if has_domains %}
+                        <span class="ml-11 px-4 py-2 text-sm bg-green-100 text-green-700 rounded-lg font-medium inline-block">
+                            <i class="fas fa-check mr-1"></i> Done
+                        </span>
+                        {% else %}
+                        <button onclick="showModal('addDomainModal')" class="ml-11 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
+                            <i class="fas fa-folder-plus mr-1"></i> Add Domain
+                        </button>
+                        {% endif %}
+                        <div class="absolute top-4 -right-3 text-slate-300 hidden lg:block"><i class="fas fa-arrow-right"></i></div>
+                    </div>
+
+                    <!-- Step 2: Template -->
+                    <div class="relative">
+                        <div class="flex items-center gap-3 mb-3">
+                            <div class="w-8 h-8 rounded-full {% if has_templates %}bg-green-500 text-white{% elif has_domains %}bg-blue-600 text-white{% else %}bg-slate-300 text-slate-500{% endif %} flex items-center justify-center font-bold text-sm">
+                                {% if has_templates %}<i class="fas fa-check text-xs"></i>{% else %}2{% endif %}
+                            </div>
+                            <h3 class="font-semibold {% if has_domains or has_templates %}text-slate-900{% else %}text-slate-400{% endif %}">Create Template</h3>
+                        </div>
+                        <p class="text-sm text-slate-500 mb-3 ml-11">
+                            {% if has_templates %}{{ templates_count }} template(s) created{% else %}Define phases and tasks{% endif %}
+                        </p>
+                        {% if has_templates %}
+                        <span class="ml-11 px-4 py-2 text-sm bg-green-100 text-green-700 rounded-lg font-medium inline-block">
+                            <i class="fas fa-check mr-1"></i> Done
+                        </span>
+                        {% elif has_domains %}
+                        <a href="/templates" class="ml-11 px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg font-medium inline-block">
+                            <i class="fas fa-layer-group mr-1"></i> Create Template
+                        </a>
+                        {% else %}
+                        <span class="ml-11 px-4 py-2 text-sm bg-slate-200 text-slate-400 rounded-lg font-medium inline-block cursor-not-allowed">
+                            <i class="fas fa-layer-group mr-1"></i> Create Template
+                        </span>
+                        {% endif %}
+                        <div class="absolute top-4 -right-3 text-slate-300 hidden lg:block"><i class="fas fa-arrow-right"></i></div>
+                    </div>
+
+                    <!-- Step 3: Project -->
+                    <div>
+                        <div class="flex items-center gap-3 mb-3">
+                            <div class="w-8 h-8 rounded-full {% if has_domains and has_templates %}bg-blue-600 text-white{% else %}bg-slate-300 text-slate-500{% endif %} flex items-center justify-center font-bold text-sm">3</div>
+                            <h3 class="font-semibold {% if has_domains and has_templates %}text-slate-900{% else %}text-slate-400{% endif %}">Create Project</h3>
+                        </div>
+                        <p class="text-sm text-slate-500 mb-3 ml-11">Start onboarding with a template</p>
+                        {% if has_domains and has_templates %}
+                        <a href="/projects/new" class="ml-11 px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg font-medium inline-block">
+                            <i class="fas fa-rocket mr-1"></i> New Project
+                        </a>
+                        {% else %}
+                        <span class="ml-11 px-4 py-2 text-sm bg-slate-200 text-slate-400 rounded-lg font-medium inline-block cursor-not-allowed">
+                            <i class="fas fa-rocket mr-1"></i> New Project
+                        </span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- PORTFOLIO VIEW -->
+    <div id="view-portfolio" class="{% if view != 'portfolio' %}hidden{% endif %}">
+
+    <!-- Metric Cards -->
+    <div class="grid grid-cols-4 gap-5 mb-8">
+        <div class="card animate-in">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-slate-500 font-medium">Total Projects</p>
+                    <p class="text-3xl font-bold text-slate-900 mt-1">{{ total_projects }}</p>
+                </div>
+                <div class="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center">
+                    <i class="fas fa-folder-open text-blue-600 text-lg"></i>
+                </div>
+            </div>
+            <div class="mt-3 flex items-center gap-2 text-xs text-slate-500">
+                <i class="fas fa-layer-group"></i>
+                <span>{{ domains|length }} domains</span>
+            </div>
+        </div>
+
+        <div class="card animate-in" style="animation-delay: 0.05s">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-slate-500 font-medium">On Track</p>
+                    <p class="text-3xl font-bold text-green-600 mt-1">{{ rag_counts.green }}</p>
+                </div>
+                <div class="w-12 h-12 rounded-xl bg-green-50 flex items-center justify-center">
+                    <i class="fas fa-check-circle text-green-600 text-lg"></i>
+                </div>
+            </div>
+            <div class="mt-3">
+                <div class="progress-bar"><div class="progress-fill bg-green-500" style="width: {{ (rag_counts.green / (total_projects or 1) * 100)|round }}%"></div></div>
+            </div>
+        </div>
+
+        <div class="card animate-in" style="animation-delay: 0.1s">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-slate-500 font-medium">In Progress</p>
+                    <p class="text-3xl font-bold text-amber-600 mt-1">{{ rag_counts.amber }}</p>
+                </div>
+                <div class="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center">
+                    <i class="fas fa-spinner text-amber-600 text-lg"></i>
+                </div>
+            </div>
+            <div class="mt-3">
+                <div class="progress-bar"><div class="progress-fill bg-amber-500" style="width: {{ (rag_counts.amber / (total_projects or 1) * 100)|round }}%"></div></div>
+            </div>
+        </div>
+
+        <div class="card animate-in" style="animation-delay: 0.15s">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-slate-500 font-medium">Delayed</p>
+                    <p class="text-3xl font-bold text-red-600 mt-1">{{ rag_counts.red }}</p>
+                </div>
+                <div class="w-12 h-12 rounded-xl bg-red-50 flex items-center justify-center">
+                    <i class="fas fa-times-circle text-red-600 text-lg"></i>
+                </div>
+            </div>
+            <div class="mt-3">
+                <div class="progress-bar"><div class="progress-fill bg-red-500" style="width: {{ (rag_counts.red / (total_projects or 1) * 100)|round }}%"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hierarchical Domain View -->
+    <div class="space-y-4">
+        <div class="flex items-center justify-between">
+            <h2 class="text-lg font-semibold text-slate-900">Projects by Domain</h2>
+        </div>
+
+        {% for d in domains %}
+        <div class="card animate-in" style="animation-delay: {{ loop.index * 0.05 }}s">
+            <!-- Domain Header -->
+            <div class="flex items-center justify-between cursor-pointer" onclick="toggleDomain('domain-{{ d.domain }}')">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm">
+                        {{ d.domain[:2] }}
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-slate-900">{{ d.domain }}</h3>
+                        <span class="text-xs text-slate-500">{{ d.count }} project{% if d.count != 1 %}s{% endif %}</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="flex gap-1">
+                        {% set domain_green = projects_by_domain.get(d.domain, {}).get('green', 0) %}
+                        {% set domain_amber = projects_by_domain.get(d.domain, {}).get('amber', 0) %}
+                        {% set domain_red = projects_by_domain.get(d.domain, {}).get('red', 0) %}
+                        {% if domain_green %}<span class="badge badge-green">{{ domain_green }} on track</span>{% endif %}
+                        {% if domain_amber %}<span class="badge badge-amber">{{ domain_amber }} in progress</span>{% endif %}
+                        {% if domain_red %}<span class="badge badge-red">{{ domain_red }} delayed</span>{% endif %}
+                    </div>
+                    <a href="/domain/{{ d.domain }}" class="p-1.5 text-slate-400 hover:text-blue-600 rounded" title="View Domain" onclick="event.stopPropagation()">
+                        <i class="fas fa-external-link-alt text-xs"></i>
+                    </a>
+                    <i class="fas fa-chevron-down text-slate-400 text-xs transition-transform" id="chevron-domain-{{ d.domain }}"></i>
+                </div>
+            </div>
+
+            <!-- Environment Breakdown -->
+            <div id="domain-{{ d.domain }}" class="hidden mt-4 border-t border-slate-100 pt-4">
+                {% for env in ['dev', 'uat', 'vpt', 'prod'] %}
+                {% set env_projects = projects|selectattr('domain', 'eq', d.domain)|selectattr('environment', 'eq', env)|list %}
+                {% if env_projects %}
+                <div class="mb-3 last:mb-0">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="px-2 py-0.5 text-xs font-medium rounded
+                            {% if env == 'prod' %}bg-red-100 text-red-700
+                            {% elif env == 'uat' %}bg-amber-100 text-amber-700
+                            {% elif env == 'vpt' %}bg-purple-100 text-purple-700
+                            {% else %}bg-green-100 text-green-700{% endif %}">
+                            {{ env|upper }}
+                        </span>
+                        <span class="text-xs text-slate-400">{{ env_projects|length }} project{% if env_projects|length != 1 %}s{% endif %}</span>
+                    </div>
+                    <div class="ml-4 space-y-2">
+                        {% for p in env_projects %}
+                        {% set rag = rag_status(p) %}
+                        <a href="/project/{{ p.id }}" class="flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 transition-colors group">
+                            <div class="flex items-center gap-2">
+                                <span class="status-dot" style="background: {{ RAG_COLORS[rag] }}"></span>
+                                <span class="text-sm font-medium text-slate-700 group-hover:text-blue-600">{{ p.project_name }}</span>
+                            </div>
+                            <div class="flex items-center gap-4">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-20">
+                                        <div class="progress-bar"><div class="progress-fill" style="width: {{ (p.completed_tasks / (p.total_tasks or 1) * 100)|round }}%; background: {{ RAG_COLORS[rag] }}"></div></div>
+                                    </div>
+                                    <span class="text-xs font-medium text-slate-500">{{ ((p.completed_tasks / (p.total_tasks or 1)) * 100)|round|int }}%</span>
+                                </div>
+                                <span class="badge badge-{{ rag }}">{{ RAG_LABELS[rag] }}</span>
+                            </div>
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+                {% endfor %}
+
+                {% if not (projects|selectattr('domain', 'eq', d.domain)|list) %}
+                <div class="text-center py-4">
+                    <p class="text-sm text-slate-400">No projects in this domain</p>
+                    <a href="/projects/new?domain={{ d.domain }}" class="text-sm text-blue-600 hover:text-blue-800 font-medium mt-2 inline-block">
+                        <i class="fas fa-plus mr-1"></i> Create Project
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+
+        {% if not domains %}
+        <div class="card text-center py-8">
+            <i class="fas fa-folder-open text-4xl text-slate-300 mb-4"></i>
+            <p class="text-slate-500">No domains configured</p>
+            <button onclick="showModal('addDomainModal')" class="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium">
+                <i class="fas fa-plus mr-1"></i> Add Domain
+            </button>
+        </div>
+        {% endif %}
+    </div>
+    </div><!-- end portfolio view -->
+
+    <!-- EXECUTION VIEW -->
+    <div id="view-execution" class="{% if view != 'execution' %}hidden{% endif %}">
+        <div class="grid grid-cols-5 gap-4 mb-6">
+            <div class="card text-center">
+                <p class="text-2xl font-bold text-slate-900">{{ total_tasks }}</p>
+                <p class="text-xs text-slate-500 mt-1">Total Tasks</p>
+            </div>
+            <div class="card text-center">
+                <p class="text-2xl font-bold text-green-600">{{ completed_tasks }}</p>
+                <p class="text-xs text-slate-500 mt-1">Completed</p>
+            </div>
+            <div class="card text-center">
+                <p class="text-2xl font-bold text-blue-600">{{ in_progress_tasks }}</p>
+                <p class="text-xs text-slate-500 mt-1">In Progress</p>
+            </div>
+            <div class="card text-center">
+                <p class="text-2xl font-bold text-slate-400">{{ pending_tasks }}</p>
+                <p class="text-xs text-slate-500 mt-1">Pending</p>
+            </div>
+            <div class="card text-center">
+                <p class="text-2xl font-bold text-red-500">{{ blocked_tasks }}</p>
+                <p class="text-xs text-slate-500 mt-1">Blocked</p>
+            </div>
+        </div>
+
+        <div class="card mb-6">
+            <h3 class="text-sm font-semibold text-slate-900 mb-4"><i class="fas fa-project-diagram text-blue-600 mr-2"></i>Project Execution Status</h3>
+            <div class="space-y-3">
+                {% for p in projects %}
+                <div class="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                    <div class="flex items-center gap-3">
+                        <div class="w-3 h-3 rounded-full" style="background: {{ RAG_COLORS[rag_status(p)] }}"></div>
+                        <a href="/project/{{ p.id }}" class="font-medium text-slate-900 hover:text-blue-600">{{ p.project_name }}</a>
+                        <span class="badge badge-blue">{{ p.domain }}</span>
+                        <span class="badge badge-gray">{{ p.environment }}</span>
+                    </div>
+                    <div class="flex items-center gap-6 text-sm">
+                        <span class="text-green-600"><i class="fas fa-check mr-1"></i>{{ p.completed_tasks }} done</span>
+                        <span class="text-blue-600"><i class="fas fa-spinner mr-1"></i>{{ p.active_phases }} active</span>
+                        <span class="text-slate-400">{{ p.total_tasks - p.completed_tasks }} remaining</span>
+                        <div class="w-24">
+                            <div class="progress-bar"><div class="progress-fill bg-blue-500" style="width: {{ (p.completed_tasks / (p.total_tasks or 1) * 100)|round }}%"></div></div>
+                        </div>
+                        <span class="font-bold text-slate-700">{{ ((p.completed_tasks / (p.total_tasks or 1)) * 100)|round|int }}%</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-6">
+            <div class="card">
+                <h3 class="text-sm font-semibold text-slate-900 mb-4"><i class="fas fa-users text-purple-600 mr-2"></i>Tasks by Ownership</h3>
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between p-2 bg-blue-50 rounded">
+                        <span class="text-sm font-medium text-blue-700">Platform Team</span>
+                        <span class="text-sm font-bold text-blue-700">{{ platform_tasks }}</span>
+                    </div>
+                    <div class="flex items-center justify-between p-2 bg-purple-50 rounded">
+                        <span class="text-sm font-medium text-purple-700">App Team</span>
+                        <span class="text-sm font-bold text-purple-700">{{ app_tasks }}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="card">
+                <h3 class="text-sm font-semibold text-slate-900 mb-4"><i class="fas fa-clock text-amber-600 mr-2"></i>Recent Activity</h3>
+                <p class="text-sm text-slate-500">{{ completed_today }} tasks completed today</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- MANAGEMENT VIEW -->
+    <div id="view-management" class="{% if view != 'management' %}hidden{% endif %}">
+        <div class="grid grid-cols-4 gap-4 mb-6">
+            <div class="card text-center">
+                <p class="text-2xl font-bold text-slate-900">{{ total_projects }}</p>
+                <p class="text-xs text-slate-500 mt-1">Total Projects</p>
+            </div>
+            <div class="card text-center">
+                <p class="text-2xl font-bold text-green-600">{{ ((rag_counts.green / (total_projects or 1)) * 100)|round|int }}%</p>
+                <p class="text-xs text-slate-500 mt-1">On Track Rate</p>
+            </div>
+            <div class="card text-center">
+                <p class="text-2xl font-bold text-amber-500">{{ avg_variance|default(0) }}d</p>
+                <p class="text-xs text-slate-500 mt-1">Avg Variance</p>
+            </div>
+            <div class="card text-center">
+                <p class="text-2xl font-bold text-red-500">{{ escalations|default(0) }}</p>
+                <p class="text-xs text-slate-500 mt-1">Escalations</p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-6 mb-6">
+            <div class="card">
+                <h3 class="text-sm font-semibold text-slate-900 mb-4"><i class="fas fa-exclamation-circle text-red-500 mr-2"></i>Escalations & Blockers</h3>
+                {% if blocked_items %}
+                <div class="space-y-2">
+                    {% for item in blocked_items %}
+                    <div class="flex items-center justify-between p-2 bg-red-50 rounded text-sm">
+                        <span class="text-red-700">{{ item.task_name }}</span>
+                        <span class="text-red-500 text-xs">{{ item.project_name }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-sm text-slate-400">No blocked tasks</p>
+                {% endif %}
+            </div>
+
+            <div class="card">
+                <h3 class="text-sm font-semibold text-slate-900 mb-4"><i class="fas fa-clock text-amber-500 mr-2"></i>Overdue Items</h3>
+                {% if overdue_phases %}
+                <div class="space-y-2">
+                    {% for item in overdue_phases %}
+                    <div class="flex items-center justify-between p-2 bg-amber-50 rounded text-sm">
+                        <span class="text-amber-700">P{{ item.phase_number }}: {{ item.phase_name }}</span>
+                        <span class="text-amber-500 text-xs">{{ item.days_overdue }}d overdue</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-sm text-slate-400">No overdue phases</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card">
+            <h3 class="text-sm font-semibold text-slate-900 mb-4"><i class="fas fa-chart-pie text-blue-600 mr-2"></i>Domain Health Summary</h3>
+            <div class="grid grid-cols-6 gap-4">
+                {% for d in domains %}
+                <a href="/domain/{{ d.domain }}" class="text-center p-3 bg-slate-50 rounded-lg hover:bg-blue-50 transition-colors">
+                    <p class="text-sm font-bold text-slate-900">{{ d.domain }}</p>
+                    <p class="text-lg font-bold mt-1 {% if d.completed == d.count %}text-green-600{% elif d.completed > 0 %}text-blue-600{% else %}text-slate-400{% endif %}">
+                        {{ d.completed }}/{{ d.count }}
+                    </p>
+                    <p class="text-xs text-slate-500">completed</p>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- Add Domain Modal -->
+<div class="modal-backdrop" id="addDomainModal">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-slate-900">Add Domain</h3>
+            <button onclick="hideModal('addDomainModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+        </div>
+        <form id="addDomainForm" onsubmit="submitDomain(event)" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Domain Code</label>
+                <input type="text" name="code" required maxlength="10" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm uppercase" placeholder="e.g., CRM">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Display Name</label>
+                <input type="text" name="display_name" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., Customer Relationship Management">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Description (optional)</label>
+                <textarea name="description" rows="2" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="Brief description"></textarea>
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="hideModal('addDomainModal')" class="px-4 py-2 text-sm text-slate-600">Cancel</button>
+                <button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">Add Domain</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Add Environment Modal -->
+<div class="modal-backdrop" id="addEnvModal">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-slate-900">Add Environment</h3>
+            <button onclick="hideModal('addEnvModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+        </div>
+        <form id="addEnvForm" onsubmit="submitEnv(event)" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Environment Code</label>
+                <input type="text" name="code" required maxlength="10" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm lowercase" placeholder="e.g., staging">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Display Name</label>
+                <input type="text" name="display_name" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., Staging Environment">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Sort Order</label>
+                <input type="number" name="sort_order" value="0" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="Lower = first">
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="hideModal('addEnvModal')" class="px-4 py-2 text-sm text-slate-600">Cancel</button>
+                <button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">Add Environment</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Toggle Domain Expansion
+function toggleDomain(id) {
+    const el = document.getElementById(id);
+    const chevron = document.getElementById('chevron-' + id);
+    if (el) {
+        el.classList.toggle('hidden');
+        if (chevron) chevron.classList.toggle('rotate-180');
+    }
+}
+
+// View Switcher
+function switchView(view) {
+    window.location.href = '/?view=' + view;
+}
+
+// Add Domain
+async function submitDomain(e) {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = Object.fromEntries(fd.entries());
+    body.code = body.code.toUpperCase();
+    const resp = await fetch('/api/domain', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    });
+    const r = await resp.json();
+    if (r.ok) {
+        hideModal('addDomainModal');
+        showToast('Domain added', 'success');
+        setTimeout(() => location.reload(), 500);
+    } else {
+        showToast(r.detail || 'Error adding domain', 'error');
+    }
+}
+
+// Add Environment
+async function submitEnv(e) {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = Object.fromEntries(fd.entries());
+    body.code = body.code.toLowerCase();
+    body.sort_order = parseInt(body.sort_order) || 0;
+    const resp = await fetch('/api/environment', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    });
+    const r = await resp.json();
+    if (r.ok) {
+        hideModal('addEnvModal');
+        showToast('Environment added', 'success');
+        setTimeout(() => location.reload(), 500);
+    } else {
+        showToast(r.detail || 'Error adding environment', 'error');
+    }
+}
+</script>
+{% endblock %}

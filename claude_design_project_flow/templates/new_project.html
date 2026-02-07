@@ -1,0 +1,270 @@
+{% extends "base.html" %}
+{% block title %}New Project — Application Onboarding Portal{% endblock %}
+
+{% block content %}
+<div class="p-8 max-w-3xl">
+    <!-- Breadcrumb -->
+    <div class="flex items-center gap-2 text-sm text-slate-500 mb-4">
+        <a href="/" class="hover:text-blue-600"><i class="fas fa-home"></i></a>
+        <i class="fas fa-chevron-right text-xs"></i>
+        <span>New Project</span>
+    </div>
+
+    <div class="mb-8">
+        <h1 class="text-2xl font-bold text-slate-900">Create Onboarding Project</h1>
+        <p class="text-slate-500 text-sm mt-1">Select a template and configure your new project</p>
+    </div>
+
+    {% if not templates_list or not domains %}
+    <!-- Prerequisites Missing -->
+    <div class="card text-center py-12">
+        <i class="fas fa-exclamation-triangle text-4xl text-amber-500 mb-4"></i>
+        <h3 class="text-lg font-semibold text-slate-700 mb-2">Setup Required</h3>
+        <p class="text-sm text-slate-500 mb-6">Before creating a project, you need to set up:</p>
+        <div class="flex justify-center gap-8 mb-6">
+            {% if not templates_list %}
+            <div class="text-center">
+                <i class="fas fa-layer-group text-2xl text-slate-400 mb-2"></i>
+                <p class="text-sm font-medium text-slate-600">Templates</p>
+                <p class="text-xs text-red-500">Not configured</p>
+            </div>
+            {% else %}
+            <div class="text-center">
+                <i class="fas fa-layer-group text-2xl text-green-500 mb-2"></i>
+                <p class="text-sm font-medium text-slate-600">Templates</p>
+                <p class="text-xs text-green-500">{{ templates_list|length }} available</p>
+            </div>
+            {% endif %}
+            {% if not domains %}
+            <div class="text-center">
+                <i class="fas fa-folder text-2xl text-slate-400 mb-2"></i>
+                <p class="text-sm font-medium text-slate-600">Domains</p>
+                <p class="text-xs text-red-500">Not configured</p>
+            </div>
+            {% else %}
+            <div class="text-center">
+                <i class="fas fa-folder text-2xl text-green-500 mb-2"></i>
+                <p class="text-sm font-medium text-slate-600">Domains</p>
+                <p class="text-xs text-green-500">{{ domains|length }} available</p>
+            </div>
+            {% endif %}
+        </div>
+        <div class="flex justify-center gap-4">
+            {% if not templates_list %}
+            <a href="/templates" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
+                <i class="fas fa-plus mr-1"></i> Create Template
+            </a>
+            {% endif %}
+            {% if not domains %}
+            <a href="/" class="px-4 py-2 text-sm bg-slate-600 text-white rounded-lg hover:bg-slate-700 font-medium">
+                <i class="fas fa-folder-plus mr-1"></i> Add Domain
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+    <form id="newProjectForm" onsubmit="createProject(event)" class="space-y-6">
+        <!-- Template Selection -->
+        <div class="card">
+            <h2 class="text-base font-semibold text-slate-900 mb-4">
+                <i class="fas fa-layer-group text-blue-600 mr-2"></i>Select Template
+            </h2>
+            <select name="template_id" required id="templateSelect" onchange="updateSummary()"
+                    class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                {% for t in templates_list %}
+                <option value="{{ t.id }}" data-phases="{{ t.phase_count }}" data-tasks="{{ t.task_count }}"
+                        data-desc="{{ t.description or '' }}" {% if t.is_default %}selected{% endif %}>
+                    {{ t.template_name }}{% if t.is_default %} (Default){% endif %}
+                </option>
+                {% endfor %}
+            </select>
+            <div id="templateSummary" class="mt-3 flex items-center gap-4 text-xs text-slate-500">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+
+        <!-- Project Details -->
+        <div class="card">
+            <h2 class="text-base font-semibold text-slate-900 mb-4">
+                <i class="fas fa-folder-open text-blue-600 mr-2"></i>Project Details
+            </h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Project Name</label>
+                    <input type="text" name="project_name" required id="projectName"
+                           class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                           placeholder="Application-dom-dev">
+                    <p class="text-xs text-slate-400 mt-1">Auto-suggested based on domain and environment</p>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Domain</label>
+                        <select name="domain" required id="domainSelect" onchange="suggestName()"
+                                class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            {% for d in domains %}
+                            <option value="{{ d.code }}" {% if preselected_domain == d.code %}selected{% endif %}>{{ d.code }} — {{ d.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Environment</label>
+                        <select name="environment" required id="envSelect" onchange="suggestName()"
+                                class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            {% for e in environments %}
+                            <option value="{{ e.code }}" {% if preselected_env == e.code %}selected{% endif %}>{{ e.display_name }}</option>
+                            {% else %}
+                            <option value="dev" {% if preselected_env == 'dev' %}selected{% endif %}>Development</option>
+                            <option value="uat" {% if preselected_env == 'uat' %}selected{% endif %}>UAT</option>
+                            <option value="vpt" {% if preselected_env == 'vpt' %}selected{% endif %}>VPT</option>
+                            <option value="prod" {% if preselected_env == 'prod' %}selected{% endif %}>Production</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Start Date</label>
+                        <input type="date" name="start_date" required id="startDate"
+                               class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Target Completion</label>
+                        <input type="date" name="target_completion" id="targetDate"
+                               class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        <p class="text-xs text-slate-400 mt-1">Auto-calculated if blank</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Team Information -->
+        <div class="card">
+            <h2 class="text-base font-semibold text-slate-900 mb-4">
+                <i class="fas fa-users text-blue-600 mr-2"></i>Team Information
+            </h2>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Team Name</label>
+                    <input type="text" name="team_name"
+                           class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                           placeholder="e.g., Claims Platform Team">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Team Email</label>
+                    <input type="email" name="team_email"
+                           class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                           placeholder="team@company.com">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">JIRA Project Key</label>
+                    <input type="text" name="jira_project"
+                           class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                           placeholder="Application-dom">
+                </div>
+            </div>
+        </div>
+
+        <!-- AWS Configuration -->
+        <div class="card">
+            <h2 class="text-base font-semibold text-slate-900 mb-4">
+                <i class="fab fa-aws text-blue-600 mr-2"></i>AWS Configuration
+                <span class="text-xs text-slate-400 font-normal ml-2">(optional)</span>
+            </h2>
+            <div class="grid grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Account ID</label>
+                    <input type="text" name="aws_account_id"
+                           class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                           placeholder="123456789012">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Region</label>
+                    <select name="aws_region" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        <option value="us-east-1">us-east-1 (N. Virginia)</option>
+                        <option value="us-west-2">us-west-2 (Oregon)</option>
+                        <option value="eu-west-1">eu-west-1 (Ireland)</option>
+                        <option value="eu-central-1">eu-central-1 (Frankfurt)</option>
+                        <option value="ap-southeast-1">ap-southeast-1 (Singapore)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">EKS Cluster</label>
+                    <input type="text" name="eks_cluster_name"
+                           class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                           placeholder="Application-dom-dev-eks">
+                </div>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex items-center justify-between pt-2">
+            <a href="/" class="text-sm text-slate-500 hover:text-slate-700"><i class="fas fa-arrow-left mr-1"></i> Back to Dashboard</a>
+            <button type="submit" id="createBtn" class="px-6 py-2.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-sm">
+                <i class="fas fa-rocket mr-1"></i> Create Project
+            </button>
+        </div>
+    </form>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Only run if form exists (templates and domains are configured)
+if (document.getElementById('newProjectForm')) {
+    // Set today's date as default start
+    document.getElementById('startDate').value = new Date().toISOString().split('T')[0];
+    updateSummary();
+    suggestName();
+}
+
+function suggestName() {
+    const domain = document.getElementById('domainSelect').value.toLowerCase();
+    const env = document.getElementById('envSelect').value;
+    document.getElementById('projectName').value = 'Application-' + domain + '-' + env;
+}
+
+function updateSummary() {
+    const sel = document.getElementById('templateSelect');
+    const opt = sel.options[sel.selectedIndex];
+    const phases = opt.dataset.phases;
+    const tasks = opt.dataset.tasks;
+    const desc = opt.dataset.desc;
+    document.getElementById('templateSummary').innerHTML =
+        '<span><i class="fas fa-diagram-project mr-1"></i>' + phases + ' phases</span>' +
+        '<span><i class="fas fa-tasks mr-1"></i>' + tasks + ' tasks</span>' +
+        (desc ? '<span class="text-slate-400">' + desc + '</span>' : '');
+}
+
+async function createProject(e) {
+    e.preventDefault();
+    const btn = document.getElementById('createBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Creating...';
+
+    const fd = new FormData(e.target);
+    const body = Object.fromEntries(fd.entries());
+    body.template_id = parseInt(body.template_id);
+    // Remove empty strings
+    Object.keys(body).forEach(k => { if (body[k] === '') delete body[k]; });
+
+    try {
+        const resp = await fetch('/api/project/create', {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+        });
+        const r = await resp.json();
+        if (r.ok) {
+            window.location.href = '/project/' + r.project_id;
+        } else {
+            showToast(r.detail || 'Error creating project', 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-rocket mr-1"></i> Create Project';
+        }
+    } catch (err) {
+        showToast('Network error', 'error');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-rocket mr-1"></i> Create Project';
+    }
+}
+</script>
+{% endblock %}

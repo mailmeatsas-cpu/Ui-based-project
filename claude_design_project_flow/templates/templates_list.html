@@ -1,0 +1,315 @@
+{% extends "base.html" %}
+{% block title %}Templates — Application Onboarding Portal{% endblock %}
+
+{% block content %}
+<div class="p-8">
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900">Template Library</h1>
+            <p class="text-slate-500 text-sm mt-1">Manage reusable onboarding project blueprints</p>
+        </div>
+        <div class="flex gap-3">
+            <!-- Import Dropdown -->
+            <div class="relative" id="importDropdown">
+                <button onclick="toggleDropdown('importDropdown')" class="px-4 py-2 text-sm border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 font-medium">
+                    <i class="fas fa-file-import mr-1"></i> Import <i class="fas fa-chevron-down ml-1 text-xs"></i>
+                </button>
+                <div class="dropdown-menu hidden absolute right-0 mt-1 w-48 bg-white border border-slate-200 rounded-lg shadow-lg z-10">
+                    <button onclick="showModal('importModal'); hideDropdown('importDropdown')" class="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                        <i class="fas fa-code text-blue-500"></i> Import JSON
+                    </button>
+                    <button onclick="showModal('importFileModal'); hideDropdown('importDropdown')" class="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                        <i class="fas fa-file-excel text-green-500"></i> Import Excel/CSV
+                    </button>
+                    <hr class="my-1 border-slate-100">
+                    <a href="/api/template/sample-excel" class="block px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 flex items-center gap-2">
+                        <i class="fas fa-download text-slate-400"></i> Sample Excel
+                    </a>
+                    <a href="/api/template/sample-csv" class="block px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 flex items-center gap-2">
+                        <i class="fas fa-download text-slate-400"></i> Sample CSV
+                    </a>
+                </div>
+            </div>
+            <button onclick="showModal('createModal')" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
+                <i class="fas fa-plus mr-1"></i> Create Template
+            </button>
+        </div>
+    </div>
+
+    {% if tpls %}
+    <div class="grid grid-cols-2 gap-5">
+        {% for t in tpls %}
+        <div class="card card-hover animate-in" style="animation-delay: {{ loop.index * 0.05 }}s">
+            <div class="flex items-start justify-between">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h3 class="font-semibold text-slate-900">{{ t.template_name }}</h3>
+                        <span class="badge badge-gray">v{{ t.version }}</span>
+                        {% if t.is_default %}<span class="badge badge-green">Default</span>{% endif %}
+                    </div>
+                    <p class="text-sm text-slate-500 mt-1">{{ t.description or 'No description' }}</p>
+                </div>
+                <div class="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-layer-group text-blue-600"></i>
+                </div>
+            </div>
+            <div class="flex items-center gap-4 mt-3 text-xs text-slate-500">
+                <span><i class="fas fa-diagram-project mr-1"></i>{{ t.phase_count }} phases</span>
+                <span><i class="fas fa-tasks mr-1"></i>{{ t.task_count }} tasks</span>
+                <span><i class="fas fa-arrows-split-up-and-left mr-1"></i>{{ t.dep_count }} deps</span>
+            </div>
+            <div class="flex items-center justify-between mt-4 pt-3 border-t border-slate-100">
+                <span class="text-xs text-slate-400">{{ t.created_at[:10] if t.created_at else '' }}</span>
+                <div class="flex gap-2">
+                    <a href="/templates/{{ t.id }}" class="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100">Edit</a>
+                    <button onclick="cloneTemplate({{ t.id }}, '{{ t.template_name }}')" class="px-3 py-1.5 text-xs font-medium bg-purple-50 text-purple-700 rounded-md hover:bg-purple-100">Clone</button>
+                    <a href="/api/template/{{ t.id }}/export" class="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 rounded-md hover:bg-green-100">Export</a>
+                    {% if not t.is_default %}
+                    <button onclick="deleteTemplate({{ t.id }}, '{{ t.template_name }}')" class="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 rounded-md hover:bg-red-100">Delete</button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="card text-center py-16">
+        <i class="fas fa-layer-group text-4xl text-slate-300 mb-4"></i>
+        <h3 class="text-lg font-semibold text-slate-700">No templates yet</h3>
+        <p class="text-sm text-slate-500 mt-1 mb-4">Create your first template to get started</p>
+        <button onclick="showModal('createModal')" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
+            <i class="fas fa-plus mr-1"></i> Create Template
+        </button>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Create Template Modal -->
+<div class="modal-backdrop" id="createModal">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-slate-900">Create New Template</h3>
+            <button onclick="hideModal('createModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+        </div>
+        <form id="createForm" onsubmit="createTemplate(event)" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Template Name</label>
+                <input type="text" name="template_name" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., Application Lite Onboarding">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                <textarea name="description" rows="2" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="What is this template for?"></textarea>
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="hideModal('createModal')" class="px-4 py-2 text-sm text-slate-600">Cancel</button>
+                <button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">Create</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Import JSON Modal -->
+<div class="modal-backdrop" id="importModal">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-slate-900">Import Template from JSON</h3>
+            <button onclick="hideModal('importModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Paste JSON</label>
+                <textarea id="importJson" rows="10" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Paste exported template JSON here..."></textarea>
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="hideModal('importModal')" class="px-4 py-2 text-sm text-slate-600">Cancel</button>
+                <button onclick="importTemplate()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">Import</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Import Excel/CSV Modal -->
+<div class="modal-backdrop" id="importFileModal">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-slate-900">Import Template from Excel/CSV</h3>
+            <button onclick="hideModal('importFileModal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="space-y-4">
+            <div class="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center" id="dropZone">
+                <i class="fas fa-cloud-upload-alt text-4xl text-slate-400 mb-3"></i>
+                <p class="text-sm text-slate-600 mb-2">Drag & drop your file here, or</p>
+                <input type="file" id="fileInput" accept=".xlsx,.csv" class="hidden" onchange="handleFileSelect(this)">
+                <button onclick="document.getElementById('fileInput').click()" class="px-4 py-2 text-sm bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 font-medium">
+                    Browse Files
+                </button>
+                <p class="text-xs text-slate-400 mt-3">Supports: .xlsx (Excel) or .csv</p>
+            </div>
+            <div id="filePreview" class="hidden bg-slate-50 rounded-lg p-4">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <i class="fas fa-file-excel text-green-500 text-xl"></i>
+                        <div>
+                            <p class="text-sm font-medium text-slate-700" id="fileName"></p>
+                            <p class="text-xs text-slate-400" id="fileSize"></p>
+                        </div>
+                    </div>
+                    <button onclick="clearFile()" class="text-slate-400 hover:text-red-500"><i class="fas fa-times"></i></button>
+                </div>
+            </div>
+            <div class="bg-blue-50 rounded-lg p-3 text-xs text-blue-700">
+                <p class="font-medium mb-1"><i class="fas fa-info-circle mr-1"></i> Excel Format:</p>
+                <ul class="list-disc ml-5 space-y-0.5">
+                    <li><strong>Phases</strong> sheet: phase_number, phase_name, duration_days</li>
+                    <li><strong>Tasks</strong> sheet: phase_number, task_order, task_name, category, ownership, priority</li>
+                    <li><strong>Dependencies</strong> sheet: phase_number, depends_on_phase_number</li>
+                </ul>
+                <p class="mt-2"><a href="/api/template/sample-excel" class="underline">Download sample Excel</a> | <a href="/api/template/sample-csv" class="underline">Download sample CSV</a></p>
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="hideModal('importFileModal')" class="px-4 py-2 text-sm text-slate-600">Cancel</button>
+                <button id="uploadBtn" onclick="uploadFile()" disabled class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i class="fas fa-upload mr-1"></i> Upload & Import
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function createTemplate(e) {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = Object.fromEntries(fd.entries());
+    const resp = await fetch('/api/template/create', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    });
+    const r = await resp.json();
+    if (r.ok) window.location.href = '/templates/' + r.template_id;
+    else showToast(r.detail || 'Error', 'error');
+}
+
+async function cloneTemplate(id, name) {
+    const newName = prompt('Name for the cloned template:', name + ' (Copy)');
+    if (!newName) return;
+    const resp = await fetch('/api/template/' + id + '/clone', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({template_name: newName})
+    });
+    const r = await resp.json();
+    if (r.ok) location.reload();
+    else showToast(r.detail || 'Error', 'error');
+}
+
+async function deleteTemplate(id, name) {
+    if (!confirm('Delete template "' + name + '"? This cannot be undone.')) return;
+    const resp = await fetch('/api/template/' + id, {method: 'DELETE'});
+    const r = await resp.json();
+    if (r.ok) location.reload();
+    else showToast(r.detail || 'Error', 'error');
+}
+
+async function importTemplate() {
+    const jsonText = document.getElementById('importJson').value.trim();
+    if (!jsonText) return;
+    try {
+        const body = JSON.parse(jsonText);
+        const resp = await fetch('/api/template/import', {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+        });
+        const r = await resp.json();
+        if (r.ok) location.reload();
+        else showToast(r.detail || 'Error', 'error');
+    } catch (e) {
+        showToast('Invalid JSON', 'error');
+    }
+}
+
+// Dropdown handling
+function toggleDropdown(id) {
+    const dd = document.getElementById(id).querySelector('.dropdown-menu');
+    dd.classList.toggle('hidden');
+}
+function hideDropdown(id) {
+    document.getElementById(id).querySelector('.dropdown-menu').classList.add('hidden');
+}
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('#importDropdown')) hideDropdown('importDropdown');
+});
+
+// File upload handling
+let selectedFile = null;
+
+function handleFileSelect(input) {
+    if (input.files.length > 0) {
+        selectedFile = input.files[0];
+        showFilePreview();
+    }
+}
+
+function showFilePreview() {
+    document.getElementById('dropZone').classList.add('hidden');
+    document.getElementById('filePreview').classList.remove('hidden');
+    document.getElementById('fileName').textContent = selectedFile.name;
+    document.getElementById('fileSize').textContent = (selectedFile.size / 1024).toFixed(1) + ' KB';
+    document.getElementById('uploadBtn').disabled = false;
+}
+
+function clearFile() {
+    selectedFile = null;
+    document.getElementById('fileInput').value = '';
+    document.getElementById('dropZone').classList.remove('hidden');
+    document.getElementById('filePreview').classList.add('hidden');
+    document.getElementById('uploadBtn').disabled = true;
+}
+
+// Drag and drop
+const dropZone = document.getElementById('dropZone');
+if (dropZone) {
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('border-blue-500', 'bg-blue-50'); });
+    dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('border-blue-500', 'bg-blue-50'); });
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+        if (e.dataTransfer.files.length > 0) {
+            const file = e.dataTransfer.files[0];
+            if (file.name.endsWith('.xlsx') || file.name.endsWith('.csv')) {
+                selectedFile = file;
+                showFilePreview();
+            } else {
+                showToast('Please upload .xlsx or .csv file', 'error');
+            }
+        }
+    });
+}
+
+async function uploadFile() {
+    if (!selectedFile) return;
+    const btn = document.getElementById('uploadBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Importing...';
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+
+    try {
+        const resp = await fetch('/api/template/import-file', { method: 'POST', body: formData });
+        const r = await resp.json();
+        if (r.ok) {
+            showToast(`Imported "${r.template_name}" with ${r.phases} phases, ${r.tasks} tasks`, 'success');
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showToast(r.detail || 'Import failed', 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-upload mr-1"></i> Upload & Import';
+        }
+    } catch (e) {
+        showToast('Upload error: ' + e.message, 'error');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-upload mr-1"></i> Upload & Import';
+    }
+}
+</script>
+{% endblock %}
